@@ -239,7 +239,7 @@ function DeptProfileModal({ dept, onClose }) {
           .slice(0, 4)
           .map(a => ({
             id:    a.pmid || a.id,
-            title: (a.title || 'Geen titel').replace(/<[^>]+>/g, ''),
+            title: cleanHtml(a.title) || 'Geen titel',
             date:  a.firstPublicationDate || a.pubYear || '',
             link:  `https://europepmc.org/article/${a.source || 'MED'}/${a.pmid || a.id}`,
           }));
@@ -554,9 +554,18 @@ Schrijf alleen de samenvatting, geen inleiding of titel.`
   );
 }
 
+// ── HTML opschonen ─────────────────────────────────────────────────────────
+function cleanHtml(str) {
+  if (!str) return '';
+  // Decode HTML entities (&lt; → <, &amp; → &, &#39; → ', etc.)
+  const txt = new DOMParser().parseFromString(str, 'text/html').body.textContent || '';
+  // Strip any remaining HTML tags
+  return txt.replace(/<[^>]+>/g, '');
+}
+
 // ── Artikel parsing (gedeeld) ──────────────────────────────────────────────
 function parseArticle(a) {
-  const fullAbstract = (a.abstractText || '').replace(/(<([^>]+)>)/gi, '');
+  const fullAbstract = cleanHtml(a.abstractText);
 
   let authorsText = a.authorString || 'Auteurs onbekend';
   const arr = authorsText.split(', ');
@@ -564,7 +573,7 @@ function parseArticle(a) {
 
   return {
     id:           a.pmid || a.id || `${a.source}-${a.title}`,
-    title:        (a.title || 'Geen titel beschikbaar').replace(/<[^>]+>/g, ''),
+    title:        cleanHtml(a.title) || 'Geen titel beschikbaar',
     journal:      a.journalInfo?.journal?.title || a.journalTitle || 'Tijdschrift onbekend',
     date:         a.firstPublicationDate || a.pubYear || 'Datum onbekend',
     abstractFull: fullAbstract,
@@ -983,7 +992,7 @@ export default function App() {
                         {pub.date}
                       </div>
                     </div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-3 leading-snug line-clamp-3">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-3 leading-snug">
                       {pub.title}
                     </h3>
                     <div className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400 mb-3">
