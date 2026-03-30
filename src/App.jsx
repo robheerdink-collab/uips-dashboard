@@ -239,7 +239,7 @@ function DeptProfileModal({ dept, onClose }) {
           .slice(0, 4)
           .map(a => ({
             id:    a.pmid || a.id,
-            title: a.title || 'Geen titel',
+            title: (a.title || 'Geen titel').replace(/<[^>]+>/g, ''),
             date:  a.firstPublicationDate || a.pubYear || '',
             link:  `https://europepmc.org/article/${a.source || 'MED'}/${a.pmid || a.id}`,
           }));
@@ -564,7 +564,7 @@ function parseArticle(a) {
 
   return {
     id:           a.pmid || a.id || `${a.source}-${a.title}`,
-    title:        a.title || 'Geen titel beschikbaar',
+    title:        (a.title || 'Geen titel beschikbaar').replace(/<[^>]+>/g, ''),
     journal:      a.journalInfo?.journal?.title || a.journalTitle || 'Tijdschrift onbekend',
     date:         a.firstPublicationDate || a.pubYear || 'Datum onbekend',
     abstractFull: fullAbstract,
