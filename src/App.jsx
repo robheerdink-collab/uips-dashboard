@@ -1,13 +1,30 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import Anthropic from '@anthropic-ai/sdk';
 import {
   ExternalLink, BookOpen, Users, FileText, AlertCircle,
   Loader2, Moon, Sun, Calendar, ChevronDown, Search,
-  Building2, X, Filter, BarChart2, Tag, Newspaper
+  Building2, X, Filter, BarChart2, Tag, Newspaper, Sparkles
 } from 'lucide-react';
 
 // ── Brand kleur ────────────────────────────────────────────────────────────
 const BRAND     = '#C4226B';
 const BRAND_DARK = '#a81d5c';
+
+// ── Anthropic client (optioneel, alleen als key beschikbaar) ───────────────
+const anthropic = import.meta.env.VITE_ANTHROPIC_API_KEY
+  ? new Anthropic({ apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true })
+  : null;
+
+// ── Samenvatting cache (localStorage) ──────────────────────────────────────
+const SUMMARY_CACHE_KEY = 'antonius-summaries';
+const readSummaryCache = () => {
+  try { return JSON.parse(localStorage.getItem(SUMMARY_CACHE_KEY) || '{}'); }
+  catch { return {}; }
+};
+const writeSummaryCache = (cache) => {
+  try { localStorage.setItem(SUMMARY_CACHE_KEY, JSON.stringify(cache)); }
+  catch { /* vol — skip */ }
+};
 
 // ── EuropePMC zoekquery ────────────────────────────────────────────────────
 const BASE_QUERY =
@@ -15,39 +32,56 @@ const BASE_QUERY =
   `OR AFF:("antonius ziekenhuis utrecht") ` +
   `OR AFF:("antonius hospital utrecht")`;
 
-// ── Afdeling normalisatie ──────────────────────────────────────────────────
+// ── Afdeling normalisatie (volgorde is belangrijk: specifieker eerst!) ─────
 const DEPT_RULES = [
+  // Chirurgische subspecialismen (vóór generiek "surg")
   [/cardiothorac/i,                    'Cardiothoracale Chirurgie'],
   [/vascular surg/i,                   'Vaatchirurgie'],
   [/trauma surg/i,                     'Traumachirurgie'],
-  [/plastic|reconstruct/i,             'Plastische & Reconstructieve Chirurgie'],
-  [/cardiol/i,                         'Cardiologie'],
+  [/orthop/i,                          'Orthopedie'],
+  [/plastic|reconstruct/i,             'Plastische Chirurgie'],
+  // Generiek chirurgie
   [/surg/i,                            'Chirurgie'],
+  // Hart
+  [/cardiol/i,                         'Cardiologie'],
+  // Longen (ILD = onderdeel van longziekten)
+  [/pulmonol|respirat|longziek|ild|interstitial lung/i, 'Longziekten'],
+  // Urologie
   [/urol/i,                            'Urologie'],
-  [/ild|interstitial lung/i,           'Longziekten – ILD Centrum'],
-  [/pulmonol|respirat|longziek/i,      'Longziekten'],
-  [/gastroenterol/i,                   'Maag-Darm-Leverziekten'],
+  // Maag-darm
+  [/gastroenterol|leverziek/i,         'Maag-Darm-Leverziekten'],
+  // Beeldvorming
   [/nuclear med/i,                     'Nucleaire Geneeskunde'],
   [/interventional radiol/i,           'Interventieradiologie'],
   [/radiol/i,                          'Radiologie'],
+  // Oncologie & radiotherapie
+  [/radiation oncol/i,                 'Oncologie'],
   [/medical oncol|oncol/i,             'Oncologie'],
+  // Interne geneeskunde (incl. hematologie, reumatologie)
+  [/rheumatol/i,                       'Reumatologie'],
+  [/hematol/i,                         'Interne Geneeskunde'],
   [/internal med/i,                    'Interne Geneeskunde'],
-  [/clinical pharm/i,                  'Klinische Farmacie'],
-  [/pharm/i,                           'Farmacie'],
+  // Farmacie (alles → Klinische Farmacie)
+  [/pharm/i,                           'Klinische Farmacie'],
+  // Laboratorium
   [/clinical chem/i,                   'Klinische Chemie'],
   [/pathol/i,                          'Pathologie'],
-  [/neuro.oncol/i,                     'Neuro-oncologie'],
+  // Neuro
+  [/neuro.oncol/i,                     'Neurologie'],
+  [/neurophysiol/i,                    'Neurologie'],
   [/neurol/i,                          'Neurologie'],
   [/neurosurg/i,                       'Neurochirurgie'],
+  // Overige kliniek
   [/paediatric|pediatric/i,            'Kindergeneeskunde'],
   [/psychiatr|medical psychol/i,       'Psychiatrie & Medische Psychologie'],
   [/anaesthesiol|anesthesiol|anesthesia|intensive care/i, 'Anesthesiologie & Intensieve Zorg'],
   [/otorhinol|ent\b/i,                 'KNO'],
+  // Ondersteunend
   [/medical physics/i,                 'Medische Fysica'],
   [/microbiol/i,                       'Medische Microbiologie'],
   [/dietetic/i,                        'Diëtetiek'],
   [/value|kwaliteit/i,                 'Kwaliteit & Waarde'],
-  [/research|statist/i,                'Onderzoek & Statistiek'],
+  [/research|statist|development/i,    'Onderzoek & Ontwikkeling'],
 ];
 
 function extractDepartments(article) {
@@ -406,26 +440,138 @@ function DeptProfileModal({ dept, onClose }) {
   );
 }
 
+// ── Publiekssamenvatting Modal ─────────────────────────────────────────────
+function SummaryModal({ pub, onClose }) {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function generate() {
+      setLoading(true);
+      setError(null);
+
+      // Check cache
+      const cache = readSummaryCache();
+      if (cache[pub.id]) {
+        setSummary(cache[pub.id]);
+        setLoading(false);
+        return;
+      }
+
+      if (!anthropic) {
+        setError('Geen API-key geconfigureerd. Stel VITE_ANTHROPIC_API_KEY in.');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await anthropic.messages.create({
+          model: 'claude-haiku-4-5',
+          max_tokens: 400,
+          messages: [{
+            role: 'user',
+            content: `Je bent een wetenschapscommunicator. Schrijf een heldere publieksamenvatting in het Nederlands (max 150 woorden) van het volgende wetenschappelijke artikel. Gebruik begrijpelijke taal, vermijd jargon, en leg uit waarom dit onderzoek relevant is voor patiënten of de maatschappij.
+
+Titel: ${pub.title}
+Tijdschrift: ${pub.journal}
+Afdeling: ${pub.departments?.filter(d => d !== 'Overig').join(', ') || 'Onbekend'}
+Abstract: ${pub.abstractFull || pub.abstract || 'Niet beschikbaar'}
+
+Schrijf alleen de samenvatting, geen inleiding of titel.`
+          }]
+        });
+
+        const text = response.content.find(b => b.type === 'text')?.text || '';
+
+        if (!cancelled) {
+          setSummary(text);
+          // Cache opslaan
+          const c = readSummaryCache();
+          c[pub.id] = text;
+          writeSummaryCache(c);
+        }
+      } catch (e) {
+        console.error('Samenvatting fout:', e);
+        if (!cancelled) setError('Kon de samenvatting niet genereren. Probeer het later opnieuw.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    generate();
+    return () => { cancelled = true; };
+  }, [pub]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-lg bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="px-5 py-4 flex items-center justify-between" style={{ backgroundColor: BRAND }}>
+          <div className="flex items-center gap-2 text-white">
+            <Sparkles size={18} />
+            <h3 className="font-semibold text-sm">Publiekssamenvatting</h3>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center">
+            <X size={16} />
+          </button>
+        </div>
+        {/* Titel */}
+        <div className="px-5 pt-4 pb-2">
+          <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug">
+            {pub.title}
+          </h4>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{pub.journal} · {pub.date}</p>
+        </div>
+        {/* Body */}
+        <div className="px-5 pb-5 pt-2">
+          {loading && (
+            <div className="flex items-center gap-3 py-8">
+              <Loader2 size={20} className="animate-spin" style={{ color: BRAND }} />
+              <span className="text-sm text-slate-500 dark:text-slate-400">Samenvatting genereren…</span>
+            </div>
+          )}
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-400 py-4">{error}</p>
+          )}
+          {!loading && !error && summary && (
+            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-slate-100 dark:border-slate-700/50">
+              <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-line">
+                {summary}
+              </p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-3 flex items-center gap-1">
+                <Sparkles size={10} /> Gegenereerd met AI · kan onnauwkeurigheden bevatten
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Artikel parsing (gedeeld) ──────────────────────────────────────────────
 function parseArticle(a) {
   const fullAbstract = (a.abstractText || '').replace(/(<([^>]+)>)/gi, '');
-  let abstract = fullAbstract || 'Geen samenvatting beschikbaar.';
-  if (abstract.length > 280) abstract = abstract.substring(0, 280).trim() + '…';
 
   let authorsText = a.authorString || 'Auteurs onbekend';
   const arr = authorsText.split(', ');
   if (arr.length > 5) authorsText = arr.slice(0, 5).join(', ') + ', et al.';
 
   return {
-    id:          a.pmid || a.id || `${a.source}-${a.title}`,
-    title:       a.title || 'Geen titel beschikbaar',
-    journal:     a.journalInfo?.journal?.title || a.journalTitle || 'Tijdschrift onbekend',
-    date:        a.firstPublicationDate || a.pubYear || 'Datum onbekend',
-    abstract,
-    authors:     authorsText,
-    link:        `https://europepmc.org/article/${a.source || 'MED'}/${a.pmid || a.id}`,
-    departments: extractDepartments(a),
-    _sortDate:   parseDate(a.firstPublicationDate || a.pubYear),
+    id:           a.pmid || a.id || `${a.source}-${a.title}`,
+    title:        a.title || 'Geen titel beschikbaar',
+    journal:      a.journalInfo?.journal?.title || a.journalTitle || 'Tijdschrift onbekend',
+    date:         a.firstPublicationDate || a.pubYear || 'Datum onbekend',
+    abstractFull: fullAbstract,
+    authors:      authorsText,
+    link:         `https://europepmc.org/article/${a.source || 'MED'}/${a.pmid || a.id}`,
+    departments:  extractDepartments(a),
+    _sortDate:    parseDate(a.firstPublicationDate || a.pubYear),
   };
 }
 
@@ -444,6 +590,7 @@ export default function App() {
   const [appliedSearch, setAppliedSearch] = useState('');
   const [appliedYear, setAppliedYear]     = useState('');
   const [openProfile, setOpenProfile]     = useState(null);
+  const [summaryPub, setSummaryPub]       = useState(null); // publicatie voor samenvatting-modal
 
   // Aparte state voor afdelingsfilter-resultaten
   const [deptPubs, setDeptPubs]             = useState([]);
@@ -632,6 +779,9 @@ export default function App() {
 
       {openProfile && (
         <DeptProfileModal dept={openProfile} onClose={() => setOpenProfile(null)} />
+      )}
+      {summaryPub && (
+        <SummaryModal pub={summaryPub} onClose={() => setSummaryPub(null)} />
       )}
 
       {/* ── Navigatie ── */}
@@ -840,7 +990,7 @@ export default function App() {
                       <Users size={15} className="shrink-0 mt-0.5" />
                       <p className="line-clamp-2">{pub.authors}</p>
                     </div>
-                    <div className="flex flex-wrap gap-1.5 mb-3">
+                    <div className="flex flex-wrap gap-1.5">
                       {pub.departments.filter(d => d !== 'Overig').map(d => (
                         <button key={d}
                           onClick={() => setSelectedDept(d)}
@@ -851,19 +1001,27 @@ export default function App() {
                         </button>
                       ))}
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700/50">
-                      <p className="text-sm text-slate-600 dark:text-slate-400 italic line-clamp-4">
-                        {pub.abstract}
-                      </p>
-                    </div>
                   </div>
-                  <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-700 mt-auto">
+                  <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-700 mt-auto flex gap-2">
+                    {anthropic && (
+                      <button
+                        onClick={() => setSummaryPub(pub)}
+                        className="inline-flex items-center justify-center gap-1.5 text-sm font-medium py-2.5 px-3 rounded-lg border transition-colors"
+                        style={{ borderColor: BRAND, color: BRAND }}
+                        onMouseOver={e => { e.currentTarget.style.backgroundColor = BRAND; e.currentTarget.style.color = '#fff'; }}
+                        onMouseOut={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = BRAND; }}
+                        title="Genereer een publieksvriendelijke samenvatting met AI"
+                      >
+                        <Sparkles size={14} />
+                        Samenvatting
+                      </button>
+                    )}
                     <a href={pub.link} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center w-full gap-2 text-white text-sm font-medium py-2.5 px-4 rounded-lg transition-colors"
+                      className="inline-flex items-center justify-center flex-1 gap-2 text-white text-sm font-medium py-2.5 px-4 rounded-lg transition-colors"
                       style={{ backgroundColor: BRAND }}
                       onMouseOver={e => e.currentTarget.style.backgroundColor = BRAND_DARK}
                       onMouseOut={e => e.currentTarget.style.backgroundColor = BRAND}>
-                      Bekijk artikel op Europe PMC
+                      Europe PMC
                       <ExternalLink size={15} />
                     </a>
                   </div>
