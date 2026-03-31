@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   ExternalLink, BookOpen, Users, FileText, AlertCircle,
   Loader2, Moon, Sun, Calendar, ChevronDown, Search,
-  Building2, X, Filter, BarChart2, Tag, Newspaper, Sparkles
+  Building2, X, Filter, BarChart2, Tag, Newspaper, Sparkles, User
 } from 'lucide-react';
 
 // ── Brand kleur ────────────────────────────────────────────────────────────
@@ -440,6 +440,276 @@ function DeptProfileModal({ dept, onClose }) {
   );
 }
 
+// ── Auteursprofiel Modal ──────────────────────────────────────────────────
+function AuthorProfileModal({ author, onClose }) {
+  const [stats, setStats]     = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true); setError(null);
+      try {
+        const thisYear = new Date().getFullYear();
+        const years    = Array.from({ length: thisYear - 2014 }, (_, i) => 2015 + i);
+
+        const perYear = await Promise.all(
+          years.map(async year => {
+            try {
+              const q = `(${BASE_QUERY}) AND AUTH:"${author}" AND PUB_YEAR:${year}`;
+              const data = await epmc(q, 100);
+              return { year, articles: data.resultList?.result || [] };
+            } catch { return { year, articles: [] }; }
+          })
+        );
+
+        if (cancelled) return;
+
+        const allArticles = perYear.flatMap(p => p.articles);
+
+        const journalCounts = {};
+        const topicCounts   = {};
+        const coauthorCounts = {};
+
+        for (const a of allArticles) {
+          const journal = a.journalInfo?.journal?.title || a.journalTitle || '';
+          if (journal) journalCounts[journal] = (journalCounts[journal] || 0) + 1;
+
+          for (const kw of a.keywordList?.keyword || []) {
+            if (kw && kw.length > 2 && kw.length < 60) {
+              const k = kw.charAt(0).toUpperCase() + kw.slice(1).toLowerCase();
+              topicCounts[k] = (topicCounts[k] || 0) + 1;
+            }
+          }
+          for (const m of a.meshHeadingList?.meshHeading || []) {
+            const t = m.descriptorName;
+            if (t && t.length > 2 && t.length < 60)
+              topicCounts[t] = (topicCounts[t] || 0) + 1;
+          }
+
+          // Co-auteurs: alle auteurs behalve de auteur zelf
+          const coAuthors = (a.authorString || '').split(', ').filter(Boolean);
+          for (const co of coAuthors) {
+            if (!author.toLowerCase().includes(co.split(' ')[0].toLowerCase()) &&
+                !co.toLowerCase().includes(author.split(' ')[0].toLowerCase())) {
+              coauthorCounts[co] = (coauthorCounts[co] || 0) + 1;
+            }
+          }
+        }
+
+        const activeYears = perYear.filter(p => p.articles.length > 0);
+        const firstYear   = activeYears[0]?.year ?? thisYear;
+        const yearChartData = perYear
+          .filter(p => p.year >= firstYear)
+          .map(p => ({ label: String(p.year), value: p.articles.length }));
+
+        const recentPubs = [...allArticles]
+          .sort((a, b) => parseDate(b.firstPublicationDate || b.pubYear) - parseDate(a.firstPublicationDate || a.pubYear))
+          .slice(0, 4)
+          .map(a => ({
+            id:   a.pmid || a.id,
+            title: cleanHtml(a.title) || 'Geen titel',
+            date:  a.firstPublicationDate || a.pubYear || '',
+            link:  `https://europepmc.org/article/${a.source || 'MED'}/${a.pmid || a.id}`,
+          }));
+
+        const minYear = firstYear;
+        const maxYear = activeYears[activeYears.length - 1]?.year ?? thisYear;
+
+        setStats({
+          count: allArticles.length,
+          minYear, maxYear,
+          yearChartData,
+          topJournals:  Object.entries(journalCounts).sort((a, b) => b[1] - a[1]).slice(0, 5),
+          topCoauthors: Object.entries(coauthorCounts).sort((a, b) => b[1] - a[1]).slice(0, 8),
+          topTopics:    Object.entries(topicCounts).sort((a, b) => b[1] - a[1]).slice(0, 8),
+          recentPubs,
+        });
+      } catch (e) {
+        if (!cancelled) setError('Kon statistieken niet ophalen.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [author]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-2xl bg-white dark:bg-slate-800 rounded-2xl shadow-2xl my-8 overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-5 flex items-center justify-between" style={{ backgroundColor: BRAND }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+              <User size={20} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white">{author}</h2>
+              <p className="text-white/75 text-sm mt-0.5">St. Antonius Ziekenhuis · Publicatieprofiel</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6">
+          {loading && (
+            <div className="flex flex-col items-center py-16">
+              <Loader2 size={36} className="animate-spin mb-3" style={{ color: BRAND }} />
+              <p className="text-slate-500 dark:text-slate-400 text-sm">Publicaties ophalen per jaar…</p>
+            </div>
+          )}
+          {error && (
+            <div className="flex items-center gap-3 text-red-600 dark:text-red-400 py-8">
+              <AlertCircle size={20} /><span>{error}</span>
+            </div>
+          )}
+          {!loading && !error && stats && (
+            <div className="space-y-6">
+              {/* Stat boxes */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-center">
+                  <div className="text-3xl font-bold" style={{ color: BRAND }}>{stats.count}</div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Publicaties (Antonius)</div>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-center">
+                  <div className="text-3xl font-bold" style={{ color: BRAND }}>
+                    {stats.count === 0 ? '–' : stats.minYear !== stats.maxYear
+                      ? `${stats.minYear}–${stats.maxYear}`
+                      : stats.minYear}
+                  </div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Actieve jaren</div>
+                </div>
+              </div>
+
+              {/* Geen publicaties */}
+              {stats.count === 0 && (
+                <p className="text-slate-500 dark:text-slate-400 text-sm text-center py-4">
+                  Geen Antonius-publicaties gevonden voor deze auteur.
+                </p>
+              )}
+
+              {/* Staafdiagram */}
+              {stats.yearChartData.some(d => d.value > 0) && (
+                <div>
+                  <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+                    <BarChart2 size={16} style={{ color: BRAND }} />
+                    Publicaties per jaar
+                  </h3>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4">
+                    <BarChart data={stats.yearChartData} color={BRAND} />
+                  </div>
+                </div>
+              )}
+
+              {/* Top Journals & Onderwerpen */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {stats.topJournals.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+                      <Newspaper size={16} style={{ color: BRAND }} />
+                      Top Journals
+                    </h3>
+                    <ul className="space-y-2">
+                      {stats.topJournals.map(([journal, count]) => (
+                        <li key={journal} className="flex items-center justify-between gap-2">
+                          <span className="text-sm text-slate-600 dark:text-slate-300 line-clamp-1 flex-1" title={journal}>
+                            {journal}
+                          </span>
+                          <span className="shrink-0 w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center text-white"
+                            style={{ backgroundColor: BRAND }}>{count}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {stats.topTopics.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+                      <Tag size={16} style={{ color: BRAND }} />
+                      Top Onderwerpen
+                    </h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      {stats.topTopics.map(([topic, count]) => (
+                        <span key={topic}
+                          className="text-xs px-2.5 py-1 rounded-full border font-medium"
+                          style={{ borderColor: BRAND, color: BRAND }}>
+                          {topic} <span className="opacity-60">({count})</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Meest voorkomende co-auteurs */}
+              {stats.topCoauthors.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+                    <Users size={16} style={{ color: BRAND }} />
+                    Meest voorkomende co-auteurs
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {stats.topCoauthors.map(([co, count]) => (
+                      <span key={co}
+                        className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-full">
+                        {co}
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-full text-white"
+                          style={{ backgroundColor: BRAND }}>{count}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recente publicaties */}
+              {stats.recentPubs.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+                    <BookOpen size={16} style={{ color: BRAND }} />
+                    Recente publicaties
+                  </h3>
+                  <ul className="space-y-1">
+                    {stats.recentPubs.map(pub => (
+                      <li key={pub.id}>
+                        <a href={pub.link} target="_blank" rel="noopener noreferrer"
+                          className="flex items-start gap-2 group hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg p-2 -mx-2 transition-colors">
+                          <ExternalLink size={14} className="shrink-0 mt-0.5 opacity-40 group-hover:opacity-100 transition-opacity"
+                            style={{ color: BRAND }} />
+                          <div>
+                            <p className="text-sm text-slate-700 dark:text-slate-200 line-clamp-2 group-hover:underline leading-snug">
+                              {pub.title}
+                            </p>
+                            {pub.date && (
+                              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{pub.date}</p>
+                            )}
+                          </div>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Publiekssamenvatting Modal ─────────────────────────────────────────────
 function SummaryModal({ pub, onClose }) {
   const [summary, setSummary] = useState(null);
@@ -567,20 +837,22 @@ function cleanHtml(str) {
 function parseArticle(a) {
   const fullAbstract = cleanHtml(a.abstractText);
 
-  let authorsText = a.authorString || 'Auteurs onbekend';
-  const arr = authorsText.split(', ');
-  if (arr.length > 5) authorsText = arr.slice(0, 5).join(', ') + ', et al.';
+  const allAuthors = (a.authorString || '').split(', ').filter(Boolean);
+  const authorNames    = allAuthors.slice(0, 5);
+  const hasMoreAuthors = allAuthors.length > 5;
 
   return {
-    id:           a.pmid || a.id || `${a.source}-${a.title}`,
-    title:        cleanHtml(a.title) || 'Geen titel beschikbaar',
-    journal:      a.journalInfo?.journal?.title || a.journalTitle || 'Tijdschrift onbekend',
-    date:         a.firstPublicationDate || a.pubYear || 'Datum onbekend',
-    abstractFull: fullAbstract,
-    authors:      authorsText,
-    link:         `https://europepmc.org/article/${a.source || 'MED'}/${a.pmid || a.id}`,
-    departments:  extractDepartments(a),
-    _sortDate:    parseDate(a.firstPublicationDate || a.pubYear),
+    id:             a.pmid || a.id || `${a.source}-${a.title}`,
+    title:          cleanHtml(a.title) || 'Geen titel beschikbaar',
+    journal:        a.journalInfo?.journal?.title || a.journalTitle || 'Tijdschrift onbekend',
+    date:           a.firstPublicationDate || a.pubYear || 'Datum onbekend',
+    abstractFull:   fullAbstract,
+    authors:        authorNames.join(', ') + (hasMoreAuthors ? ', et al.' : ''),
+    authorNames,
+    hasMoreAuthors,
+    link:           `https://europepmc.org/article/${a.source || 'MED'}/${a.pmid || a.id}`,
+    departments:    extractDepartments(a),
+    _sortDate:      parseDate(a.firstPublicationDate || a.pubYear),
   };
 }
 
@@ -599,6 +871,7 @@ export default function App() {
   const [appliedSearch, setAppliedSearch] = useState('');
   const [appliedYear, setAppliedYear]     = useState('');
   const [openProfile, setOpenProfile]     = useState(null);
+  const [authorProfile, setAuthorProfile] = useState(null); // auteursprofiel modal
   const [summaryPub, setSummaryPub]       = useState(null); // publicatie voor samenvatting-modal
 
   // Aparte state voor afdelingsfilter-resultaten
@@ -788,6 +1061,9 @@ export default function App() {
 
       {openProfile && (
         <DeptProfileModal dept={openProfile} onClose={() => setOpenProfile(null)} />
+      )}
+      {authorProfile && (
+        <AuthorProfileModal author={authorProfile} onClose={() => setAuthorProfile(null)} />
       )}
       {summaryPub && (
         <SummaryModal pub={summaryPub} onClose={() => setSummaryPub(null)} />
@@ -997,7 +1273,24 @@ export default function App() {
                     </h3>
                     <div className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400 mb-3">
                       <Users size={15} className="shrink-0 mt-0.5" />
-                      <p className="line-clamp-2">{pub.authors}</p>
+                      <p className="leading-snug">
+                        {pub.authorNames.map((name, i) => (
+                          <React.Fragment key={name + i}>
+                            {i > 0 && <span>, </span>}
+                            <button
+                              onClick={() => setAuthorProfile(name)}
+                              className="hover:underline transition-colors"
+                              style={{ color: 'inherit' }}
+                              onMouseOver={e => e.currentTarget.style.color = BRAND}
+                              onMouseOut={e => e.currentTarget.style.color = ''}
+                              title={`Bekijk profiel van ${name}`}
+                            >
+                              {name}
+                            </button>
+                          </React.Fragment>
+                        ))}
+                        {pub.hasMoreAuthors && <span>, et al.</span>}
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {pub.departments.filter(d => d !== 'Overig').map(d => (
