@@ -52,30 +52,34 @@ const sdgIconUrl = n =>
   `${import.meta.env.BASE_URL}E-WEB-Goal-${String(n).padStart(2, '0')}.png`;
 
 // ── EuropePMC search query ────────────────────────────────────────────────
+// Matches: "UIPS" anywhere in affiliation, OR "Utrecht Institute" + "pharmaceutical science(s)"
 const BASE_QUERY =
-  `(AFF:("Utrecht Institute for Pharmaceutical Sciences") OR AFF:("Utrecht Institute of Pharmaceutical Sciences") OR (AFF:("UIPS") AND AFF:("Utrecht")))`;
+  `(AFF:("UIPS") OR (AFF:("Utrecht Institute") AND AFF:("pharmaceutical sciences")))`;
 
-// ── Division normalisation (order matters: most specific first!) ───────────
-const DEPT_RULES = [
-  // Pharmacoepidemiology & Clinical Pharmacology (before generic "pharmacol")
-  [/pharmacoepidemiol/i,                                   'Pharmacoepidemiology & Clinical Pharmacology'],
-  [/clinical pharmacol/i,                                  'Pharmacoepidemiology & Clinical Pharmacology'],
-  // Biomolecular Mass Spectrometry and Proteomics
-  [/mass spectrometry|proteomics|biomolecular/i,           'Biomolecular Mass Spectrometry and Proteomics'],
-  // Chemical Biology and Drug Discovery
-  [/chemical biology|drug discovery|medicinal chem/i,     'Chemical Biology and Drug Discovery'],
-  // Pharmaceutics
-  [/pharmaceutics|drug delivery|drug formul/i,            'Pharmaceutics'],
-  // Pharmacology (generic — after Pharmacoepidemiology & Clinical Pharmacology)
-  [/pharmacol/i,                                          'Pharmacology'],
-];
-
-// Check if an affiliation string is UIPS-related
+// ── UIPS affiliation check (local, on fetched articles) ───────────────────
+// An affiliation is UIPS-related if it contains "uips" OR
+// ("utrecht institute" AND "pharmaceutical science")
 function isUIPSAffiliation(aff) {
   const a = aff.toLowerCase();
-  return a.includes('pharmaceutical sciences') ||
-         a.includes('uips') ||
-         (a.includes('utrecht') && DEPT_RULES.some(([re]) => re.test(a)));
+  return a.includes('uips') ||
+         (a.includes('utrecht institute') && a.includes('pharmaceutical science'));
+}
+
+// ── Division assignment ────────────────────────────────────────────────────
+// Rules applied in order; pharmacoepidemiology checked before generic pharmacology
+function affiliationToDivision(aff) {
+  const a = aff.toLowerCase();
+  if (a.includes('pharmacoepidemiol'))
+    return 'Pharmacoepidemiology & Clinical Pharmacology';
+  if (a.includes('spectrometry') || a.includes('proteomics'))
+    return 'Biomolecular Mass Spectrometry and Proteomics';
+  if (a.includes('chemical biology') || a.includes('drug discovery'))
+    return 'Chemical Biology and Drug Discovery';
+  if (a.includes('pharmaceutics'))
+    return 'Pharmaceutics';
+  if (a.includes('pharmacology'))
+    return 'Pharmacology';
+  return 'Division not listed';
 }
 
 function extractDepartments(article) {
@@ -85,13 +89,7 @@ function extractDepartments(article) {
     const affs = author.authorAffiliationDetailsList?.authorAffiliation || [];
     for (const { affiliation: aff = '' } of affs) {
       if (!isUIPSAffiliation(aff)) continue;
-      const m = aff.match(/^(Division of [^,]+|Department of [^,]+)/i);
-      const s = m ? m[1] : aff;
-      let matched = false;
-      for (const [re, label] of DEPT_RULES) {
-        if (re.test(s)) { found.add(label); matched = true; break; }
-      }
-      if (!matched) found.add('Division not listed');
+      found.add(affiliationToDivision(aff));
     }
   }
   return found.size > 0 ? [...found] : ['Division not listed'];
