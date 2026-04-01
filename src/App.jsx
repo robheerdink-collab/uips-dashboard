@@ -1130,7 +1130,11 @@ export default function App() {
   };
 
   // ── Which publications to show? ───────────────────────────────────────────
-  const availableDepts = useMemo(() => [...knownDepts].sort(), [knownDepts]);
+  const availableDepts = useMemo(() => {
+    const named = [...knownDepts].filter(d => d !== 'Division not listed').sort();
+    const hasUnlisted = knownDepts.has('Division not listed');
+    return { named, hasUnlisted };
+  }, [knownDepts]);
   const displayPubs    = selectedDept ? deptPubs : publications;
   const isLoading      = selectedDept ? deptLoading : loading;
   const isLoadingMore  = selectedDept ? deptLoadingMore : loadingMore;
@@ -1233,7 +1237,7 @@ export default function App() {
         </div>
 
         {/* ── Division filter ── */}
-        {(availableDepts.length > 0 || !deptsScanned) && (
+        {(availableDepts.named.length > 0 || availableDepts.hasUnlisted || !deptsScanned) && (
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-2 text-sm font-medium text-slate-500 dark:text-slate-400">
               <Building2 size={16} />
@@ -1257,12 +1261,12 @@ export default function App() {
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {!deptsScanned && availableDepts.length === 0 && (
+              {!deptsScanned && availableDepts.named.length === 0 && !availableDepts.hasUnlisted && (
                 <span className="inline-flex items-center gap-2 text-sm text-slate-400">
                   <Loader2 size={14} className="animate-spin" /> Detecting divisions…
                 </span>
               )}
-              {availableDepts.map(dept => {
+              {availableDepts.named.map(dept => {
                 const isActive = selectedDept === dept;
                 return (
                   <button
@@ -1278,6 +1282,21 @@ export default function App() {
                   </button>
                 );
               })}
+              {availableDepts.hasUnlisted && (
+                <>
+                  <span className="w-px self-stretch bg-slate-300 dark:bg-slate-600 mx-1" />
+                  <button
+                    onClick={() => setSelectedDept(d => d === 'Division not listed' ? '' : 'Division not listed')}
+                    className="inline-flex items-center gap-1.5 text-sm px-3.5 py-1.5 rounded-full border transition-all font-medium"
+                    style={selectedDept === 'Division not listed'
+                      ? { backgroundColor: BRAND, borderColor: BRAND, color: BRAND_TEXT }
+                      : { backgroundColor: 'transparent', borderColor: '#888', color: '#888' }
+                    }
+                  >
+                    Division not listed
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
