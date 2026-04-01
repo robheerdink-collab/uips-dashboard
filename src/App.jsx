@@ -84,10 +84,10 @@ function extractDepartments(article) {
       for (const [re, label] of DEPT_RULES) {
         if (re.test(s)) { found.add(label); matched = true; break; }
       }
-      if (!matched) found.add('Overig');
+      if (!matched) found.add('Division not listed');
     }
   }
-  return found.size > 0 ? [...found] : ['Overig'];
+  return found.size > 0 ? [...found] : ['Division not listed'];
 }
 
 function extractUIPSAuthors(article) {
@@ -735,7 +735,7 @@ function SummaryModal({ pub, onClose }) {
 
 Title: ${pub.title}
 Journal: ${pub.journal}
-Division: ${pub.departments?.filter(d => d !== 'Overig').join(', ') || 'Unknown'}
+Division: ${pub.departments?.filter(d => d !== 'Division not listed').join(', ') || 'Unknown'}
 Abstract: ${pub.abstractFull || pub.abstract || 'Not available'}
 
 Write only the summary, no introduction or title.`
@@ -976,7 +976,7 @@ export default function App() {
 
           for (const a of articles) {
             for (const d of extractDepartments(a)) {
-              if (d !== 'Overig') found.add(d);
+              found.add(d);
             }
           }
 
@@ -1365,7 +1365,7 @@ export default function App() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {pub.departments.filter(d => d !== 'Overig').map(d => (
+                      {pub.departments.map(d => (
                         <button key={d}
                           onClick={() => setSelectedDept(d)}
                           className="text-xs px-2 py-0.5 rounded-full border border-black text-slate-700 dark:border-slate-400 dark:text-slate-300 transition-colors hover:bg-yellow-100 dark:hover:bg-slate-700"
