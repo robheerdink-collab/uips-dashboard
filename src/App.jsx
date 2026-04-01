@@ -6,16 +6,17 @@ import {
   Building2, X, Filter, BarChart2, Tag, Newspaper, Sparkles, User
 } from 'lucide-react';
 
-// ── Brand kleur ────────────────────────────────────────────────────────────
-const BRAND     = '#C00A35';
-const BRAND_DARK = '#9a0829';
+// ── Brand colours (UIPS / Utrecht University) ─────────────────────────────
+const BRAND      = '#FFCD00';   // UU yellow – used for backgrounds
+const BRAND_DARK = '#E6B800';   // darker yellow – hover state
+const BRAND_TEXT = '#000000';   // black – text/borders on light backgrounds
 
 // ── Anthropic client (optioneel, alleen als key beschikbaar) ───────────────
 const anthropic = import.meta.env.VITE_ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true })
   : null;
 
-// ── Samenvatting cache (localStorage) ──────────────────────────────────────
+// ── Summary cache (localStorage) ──────────────────────────────────────────
 const SUMMARY_CACHE_KEY = 'uips-summaries';
 const readSummaryCache = () => {
   try { return JSON.parse(localStorage.getItem(SUMMARY_CACHE_KEY) || '{}'); }
@@ -23,16 +24,16 @@ const readSummaryCache = () => {
 };
 const writeSummaryCache = (cache) => {
   try { localStorage.setItem(SUMMARY_CACHE_KEY, JSON.stringify(cache)); }
-  catch { /* vol — skip */ }
+  catch { /* full — skip */ }
 };
 
-// ── EuropePMC zoekquery ────────────────────────────────────────────────────
+// ── EuropePMC search query ────────────────────────────────────────────────
 const BASE_QUERY =
   `AFF:("Utrecht Institute for Pharmaceutical Sciences")`;
 
-// ── Divisie normalisatie (volgorde is belangrijk: specifieker eerst!) ──────
+// ── Division normalisation (order matters: most specific first!) ───────────
 const DEPT_RULES = [
-  // Pharmacoepidemiology & Clinical Pharmacology (specifiek vóór generiek "pharmacol")
+  // Pharmacoepidemiology & Clinical Pharmacology (before generic "pharmacol")
   [/pharmacoepidemiol/i,                                   'Pharmacoepidemiology & Clinical Pharmacology'],
   [/clinical pharmacol/i,                                  'Pharmacoepidemiology & Clinical Pharmacology'],
   // Biomolecular Mass Spectrometry and Proteomics
@@ -41,7 +42,7 @@ const DEPT_RULES = [
   [/chemical biology|drug discovery|medicinal chem/i,     'Chemical Biology and Drug Discovery'],
   // Pharmaceutics
   [/pharmaceutics|drug delivery|drug formul/i,            'Pharmaceutics'],
-  // Pharmacology (generiek — ná Pharmacoepidemiology & Clinical Pharmacology)
+  // Pharmacology (generic — after Pharmacoepidemiology & Clinical Pharmacology)
   [/pharmacol/i,                                          'Pharmacology'],
 ];
 
@@ -191,20 +192,20 @@ function DeptProfileModal({ dept, onClose }) {
           }
         }
 
-        // Jaardiagram (alleen jaren met ≥1 publicatie + aangrenzende jaren)
+        // Year chart (only years with ≥1 publication + adjacent years)
         const activeYears = perYear.filter(p => p.articles.length > 0);
         const firstYear   = activeYears[0]?.year ?? thisYear;
         const yearChartData = perYear
           .filter(p => p.year >= firstYear)
           .map(p => ({ label: String(p.year), value: p.articles.length }));
 
-        // Recente publicaties (meest recent)
+        // Recent publications (most recent first)
         const recentPubs = [...allArticles]
           .sort((a, b) => parseDate(b.firstPublicationDate || b.pubYear) - parseDate(a.firstPublicationDate || a.pubYear))
           .slice(0, 4)
           .map(a => ({
             id:    a.pmid || a.id,
-            title: cleanHtml(a.title) || 'Geen titel',
+            title: cleanHtml(a.title) || 'No title',
             date:  a.firstPublicationDate || a.pubYear || '',
             link:  `https://europepmc.org/article/${a.source || 'MED'}/${a.pmid || a.id}`,
           }));
@@ -223,7 +224,7 @@ function DeptProfileModal({ dept, onClose }) {
           recentPubs,
         });
       } catch (e) {
-        if (!cancelled) setError('Kon statistieken niet ophalen.');
+        if (!cancelled) setError('Could not fetch statistics.');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -242,12 +243,13 @@ function DeptProfileModal({ dept, onClose }) {
         {/* Header */}
         <div className="px-6 py-5 flex items-center justify-between" style={{ backgroundColor: BRAND }}>
           <div>
-            <h2 className="text-xl font-bold text-white">{dept}</h2>
-            <p className="text-white/75 text-sm mt-0.5">UIPS · Utrecht University</p>
+            <h2 className="text-xl font-bold" style={{ color: BRAND_TEXT }}>{dept}</h2>
+            <p className="text-sm mt-0.5" style={{ color: BRAND_TEXT, opacity: 0.7 }}>UIPS · Utrecht University</p>
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors"
+            className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
+            style={{ backgroundColor: 'rgba(0,0,0,0.12)', color: BRAND_TEXT }}
           >
             <X size={18} />
           </button>
@@ -257,9 +259,9 @@ function DeptProfileModal({ dept, onClose }) {
         <div className="p-6">
           {loading && (
             <div className="flex flex-col items-center py-16">
-              <Loader2 size={36} className="animate-spin mb-3" style={{ color: BRAND }} />
+              <Loader2 size={36} className="animate-spin mb-3" style={{ color: BRAND_TEXT }} />
               <p className="text-slate-500 dark:text-slate-400 text-sm">
-                Statistieken ophalen per jaar…
+                Fetching statistics per year…
               </p>
             </div>
           )}
@@ -274,45 +276,45 @@ function DeptProfileModal({ dept, onClose }) {
               {/* Stat boxes */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-center">
-                  <div className="text-3xl font-bold" style={{ color: BRAND }}>
+                  <div className="text-3xl font-bold" style={{ color: BRAND_TEXT }}>
                     {stats.cappedPerYear ? `${stats.count}+` : stats.count}
                   </div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Publicaties gevonden</div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Publications found</div>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-center">
-                  <div className="text-3xl font-bold" style={{ color: BRAND }}>
+                  <div className="text-3xl font-bold" style={{ color: BRAND_TEXT }}>
                     {stats.minYear !== stats.maxYear
                       ? `${stats.minYear}–${stats.maxYear}`
                       : stats.minYear}
                   </div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Actieve jaren</div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Active years</div>
                 </div>
               </div>
 
-              {/* Staafdiagram */}
+              {/* Bar chart */}
               {stats.yearChartData.length > 0 && (
                 <div>
                   <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                    <BarChart2 size={16} style={{ color: BRAND }} />
-                    Publicaties per jaar
+                    <BarChart2 size={16} style={{ color: BRAND_TEXT }} />
+                    Publications per year
                   </h3>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4">
                     <BarChart data={stats.yearChartData} color={BRAND} />
                   </div>
                   {stats.cappedPerYear && (
                     <p className="text-xs text-slate-400 mt-1">
-                      * Aantallen zijn per jaar afgetopt op 100 (steekproef)
+                      * Numbers are capped at 100 per year (sample)
                     </p>
                   )}
                 </div>
               )}
 
-              {/* Top Journals & Onderwerpen */}
+              {/* Top Journals & Topics */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {stats.topJournals.length > 0 && (
                   <div>
                     <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                      <Newspaper size={16} style={{ color: BRAND }} />
+                      <Newspaper size={16} style={{ color: BRAND_TEXT }} />
                       Top Journals
                     </h3>
                     <ul className="space-y-2">
@@ -321,8 +323,8 @@ function DeptProfileModal({ dept, onClose }) {
                           <span className="text-sm text-slate-600 dark:text-slate-300 line-clamp-1 flex-1" title={journal}>
                             {journal}
                           </span>
-                          <span className="shrink-0 w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center text-white"
-                            style={{ backgroundColor: BRAND }}>
+                          <span className="shrink-0 w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center"
+                            style={{ backgroundColor: BRAND, color: BRAND_TEXT }}>
                             {count}
                           </span>
                         </li>
@@ -333,14 +335,13 @@ function DeptProfileModal({ dept, onClose }) {
                 {stats.topTopics.length > 0 && (
                   <div>
                     <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                      <Tag size={16} style={{ color: BRAND }} />
-                      Top Onderwerpen
+                      <Tag size={16} style={{ color: BRAND_TEXT }} />
+                      Top Topics
                     </h3>
                     <div className="flex flex-wrap gap-1.5">
                       {stats.topTopics.map(([topic, count]) => (
                         <span key={topic}
-                          className="text-xs px-2.5 py-1 rounded-full border font-medium"
-                          style={{ borderColor: BRAND, color: BRAND }}>
+                          className="text-xs px-2.5 py-1 rounded-full border font-medium border-black text-slate-700 dark:border-slate-400 dark:text-slate-300">
                           {topic} <span className="opacity-60">({count})</span>
                         </span>
                       ))}
@@ -349,40 +350,39 @@ function DeptProfileModal({ dept, onClose }) {
                 )}
               </div>
 
-              {/* Meest voorkomende auteurs */}
+              {/* Most frequent authors */}
               {stats.topAuthors.length > 0 && (
                 <div>
                   <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                    <Users size={16} style={{ color: BRAND }} />
-                    Meest voorkomende auteurs
+                    <Users size={16} style={{ color: BRAND_TEXT }} />
+                    Most frequent authors
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     {stats.topAuthors.map(([author, count]) => (
                       <span key={author}
                         className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-full">
                         {author}
-                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-full text-white"
-                          style={{ backgroundColor: BRAND }}>{count}</span>
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ backgroundColor: BRAND, color: BRAND_TEXT }}>{count}</span>
                       </span>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Recente publicaties */}
+              {/* Recent publications */}
               {stats.recentPubs.length > 0 && (
                 <div>
                   <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                    <BookOpen size={16} style={{ color: BRAND }} />
-                    Recente publicaties
+                    <BookOpen size={16} style={{ color: BRAND_TEXT }} />
+                    Recent publications
                   </h3>
                   <ul className="space-y-1">
                     {stats.recentPubs.map(pub => (
                       <li key={pub.id}>
                         <a href={pub.link} target="_blank" rel="noopener noreferrer"
                           className="flex items-start gap-2 group hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg p-2 -mx-2 transition-colors">
-                          <ExternalLink size={14} className="shrink-0 mt-0.5 opacity-40 group-hover:opacity-100 transition-opacity"
-                            style={{ color: BRAND }} />
+                          <ExternalLink size={14} className="shrink-0 mt-0.5 opacity-40 group-hover:opacity-100 transition-opacity text-slate-500" />
                           <div>
                             <p className="text-sm text-slate-700 dark:text-slate-200 line-clamp-2 group-hover:underline leading-snug">
                               {pub.title}
@@ -405,7 +405,7 @@ function DeptProfileModal({ dept, onClose }) {
   );
 }
 
-// ── Auteursprofiel Modal ──────────────────────────────────────────────────
+// ── Author Profile Modal ──────────────────────────────────────────────────
 function AuthorProfileModal({ author, onClose }) {
   const [stats, setStats]     = useState(null);
   const [loading, setLoading] = useState(true);
@@ -475,7 +475,7 @@ function AuthorProfileModal({ author, onClose }) {
           .slice(0, 4)
           .map(a => ({
             id:   a.pmid || a.id,
-            title: cleanHtml(a.title) || 'Geen titel',
+            title: cleanHtml(a.title) || 'No title',
             date:  a.firstPublicationDate || a.pubYear || '',
             link:  `https://europepmc.org/article/${a.source || 'MED'}/${a.pmid || a.id}`,
           }));
@@ -493,7 +493,7 @@ function AuthorProfileModal({ author, onClose }) {
           recentPubs,
         });
       } catch (e) {
-        if (!cancelled) setError('Kon statistieken niet ophalen.');
+        if (!cancelled) setError('Could not fetch statistics.');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -512,17 +512,18 @@ function AuthorProfileModal({ author, onClose }) {
         {/* Header */}
         <div className="px-6 py-5 flex items-center justify-between" style={{ backgroundColor: BRAND }}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-              <User size={20} className="text-white" />
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.12)' }}>
+              <User size={20} style={{ color: BRAND_TEXT }} />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">{author}</h2>
-              <p className="text-white/75 text-sm mt-0.5">UIPS · Utrecht University · Publicatieprofiel</p>
+              <h2 className="text-xl font-bold" style={{ color: BRAND_TEXT }}>{author}</h2>
+              <p className="text-sm mt-0.5" style={{ color: BRAND_TEXT, opacity: 0.7 }}>UIPS · Utrecht University · Publication Profile</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors"
+            className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
+            style={{ backgroundColor: 'rgba(0,0,0,0.12)', color: BRAND_TEXT }}
           >
             <X size={18} />
           </button>
@@ -532,8 +533,8 @@ function AuthorProfileModal({ author, onClose }) {
         <div className="p-6">
           {loading && (
             <div className="flex flex-col items-center py-16">
-              <Loader2 size={36} className="animate-spin mb-3" style={{ color: BRAND }} />
-              <p className="text-slate-500 dark:text-slate-400 text-sm">Publicaties ophalen per jaar…</p>
+              <Loader2 size={36} className="animate-spin mb-3" style={{ color: BRAND_TEXT }} />
+              <p className="text-slate-500 dark:text-slate-400 text-sm">Fetching publications per year…</p>
             </div>
           )}
           {error && (
@@ -546,32 +547,32 @@ function AuthorProfileModal({ author, onClose }) {
               {/* Stat boxes */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-center">
-                  <div className="text-3xl font-bold" style={{ color: BRAND }}>{stats.count}</div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Publicaties (UIPS)</div>
+                  <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">{stats.count}</div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Publications (UIPS)</div>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-center">
-                  <div className="text-3xl font-bold" style={{ color: BRAND }}>
+                  <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
                     {stats.count === 0 ? '–' : stats.minYear !== stats.maxYear
                       ? `${stats.minYear}–${stats.maxYear}`
                       : stats.minYear}
                   </div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Actieve jaren</div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Active years</div>
                 </div>
               </div>
 
-              {/* Geen publicaties */}
+              {/* No publications */}
               {stats.count === 0 && (
                 <p className="text-slate-500 dark:text-slate-400 text-sm text-center py-4">
-                  Geen UIPS-publicaties gevonden voor deze auteur.
+                  No UIPS publications found for this author.
                 </p>
               )}
 
-              {/* Staafdiagram */}
+              {/* Bar chart */}
               {stats.yearChartData.some(d => d.value > 0) && (
                 <div>
                   <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                    <BarChart2 size={16} style={{ color: BRAND }} />
-                    Publicaties per jaar
+                    <BarChart2 size={16} style={{ color: BRAND_TEXT }} />
+                    Publications per year
                   </h3>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4">
                     <BarChart data={stats.yearChartData} color={BRAND} />
@@ -579,12 +580,12 @@ function AuthorProfileModal({ author, onClose }) {
                 </div>
               )}
 
-              {/* Top Journals & Onderwerpen */}
+              {/* Top Journals & Topics */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {stats.topJournals.length > 0 && (
                   <div>
                     <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                      <Newspaper size={16} style={{ color: BRAND }} />
+                      <Newspaper size={16} style={{ color: BRAND_TEXT }} />
                       Top Journals
                     </h3>
                     <ul className="space-y-2">
@@ -593,8 +594,8 @@ function AuthorProfileModal({ author, onClose }) {
                           <span className="text-sm text-slate-600 dark:text-slate-300 line-clamp-1 flex-1" title={journal}>
                             {journal}
                           </span>
-                          <span className="shrink-0 w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center text-white"
-                            style={{ backgroundColor: BRAND }}>{count}</span>
+                          <span className="shrink-0 w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center"
+                            style={{ backgroundColor: BRAND, color: BRAND_TEXT }}>{count}</span>
                         </li>
                       ))}
                     </ul>
@@ -603,14 +604,13 @@ function AuthorProfileModal({ author, onClose }) {
                 {stats.topTopics.length > 0 && (
                   <div>
                     <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                      <Tag size={16} style={{ color: BRAND }} />
-                      Top Onderwerpen
+                      <Tag size={16} style={{ color: BRAND_TEXT }} />
+                      Top Topics
                     </h3>
                     <div className="flex flex-wrap gap-1.5">
                       {stats.topTopics.map(([topic, count]) => (
                         <span key={topic}
-                          className="text-xs px-2.5 py-1 rounded-full border font-medium"
-                          style={{ borderColor: BRAND, color: BRAND }}>
+                          className="text-xs px-2.5 py-1 rounded-full border font-medium border-black text-slate-700 dark:border-slate-400 dark:text-slate-300">
                           {topic} <span className="opacity-60">({count})</span>
                         </span>
                       ))}
@@ -619,40 +619,39 @@ function AuthorProfileModal({ author, onClose }) {
                 )}
               </div>
 
-              {/* Meest voorkomende co-auteurs */}
+              {/* Most frequent co-authors */}
               {stats.topCoauthors.length > 0 && (
                 <div>
                   <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                    <Users size={16} style={{ color: BRAND }} />
-                    Meest voorkomende co-auteurs
+                    <Users size={16} style={{ color: BRAND_TEXT }} />
+                    Most frequent co-authors
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     {stats.topCoauthors.map(([co, count]) => (
                       <span key={co}
                         className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-full">
                         {co}
-                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-full text-white"
-                          style={{ backgroundColor: BRAND }}>{count}</span>
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ backgroundColor: BRAND, color: BRAND_TEXT }}>{count}</span>
                       </span>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Recente publicaties */}
+              {/* Recent publications */}
               {stats.recentPubs.length > 0 && (
                 <div>
                   <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                    <BookOpen size={16} style={{ color: BRAND }} />
-                    Recente publicaties
+                    <BookOpen size={16} style={{ color: BRAND_TEXT }} />
+                    Recent publications
                   </h3>
                   <ul className="space-y-1">
                     {stats.recentPubs.map(pub => (
                       <li key={pub.id}>
                         <a href={pub.link} target="_blank" rel="noopener noreferrer"
                           className="flex items-start gap-2 group hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg p-2 -mx-2 transition-colors">
-                          <ExternalLink size={14} className="shrink-0 mt-0.5 opacity-40 group-hover:opacity-100 transition-opacity"
-                            style={{ color: BRAND }} />
+                          <ExternalLink size={14} className="shrink-0 mt-0.5 opacity-40 group-hover:opacity-100 transition-opacity text-slate-500" />
                           <div>
                             <p className="text-sm text-slate-700 dark:text-slate-200 line-clamp-2 group-hover:underline leading-snug">
                               {pub.title}
@@ -675,7 +674,7 @@ function AuthorProfileModal({ author, onClose }) {
   );
 }
 
-// ── Publiekssamenvatting Modal ─────────────────────────────────────────────
+// ── Public Summary Modal ───────────────────────────────────────────────────
 function SummaryModal({ pub, onClose }) {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -697,7 +696,7 @@ function SummaryModal({ pub, onClose }) {
       }
 
       if (!anthropic) {
-        setError('Geen API-key geconfigureerd. Stel VITE_ANTHROPIC_API_KEY in.');
+        setError('No API key configured. Set VITE_ANTHROPIC_API_KEY.');
         setLoading(false);
         return;
       }
@@ -708,14 +707,14 @@ function SummaryModal({ pub, onClose }) {
           max_tokens: 400,
           messages: [{
             role: 'user',
-            content: `Je bent een wetenschapscommunicator. Schrijf een heldere publieksamenvatting in het Nederlands (max 150 woorden) van het volgende wetenschappelijke artikel van het Utrecht Institute for Pharmaceutical Sciences (UIPS). Gebruik begrijpelijke taal, vermijd jargon, en leg uit waarom dit onderzoek relevant is voor patiënten of de maatschappij.
+            content: `You are a science communicator. Write a clear public summary in English (max 150 words) of the following scientific article from the Utrecht Institute for Pharmaceutical Sciences (UIPS). Use accessible language, avoid jargon, and explain why this research matters for patients or society.
 
-Titel: ${pub.title}
-Tijdschrift: ${pub.journal}
-Divisie: ${pub.departments?.filter(d => d !== 'Overig').join(', ') || 'Onbekend'}
-Abstract: ${pub.abstractFull || pub.abstract || 'Niet beschikbaar'}
+Title: ${pub.title}
+Journal: ${pub.journal}
+Division: ${pub.departments?.filter(d => d !== 'Overig').join(', ') || 'Unknown'}
+Abstract: ${pub.abstractFull || pub.abstract || 'Not available'}
 
-Schrijf alleen de samenvatting, geen inleiding of titel.`
+Write only the summary, no introduction or title.`
           }]
         });
 
@@ -723,14 +722,14 @@ Schrijf alleen de samenvatting, geen inleiding of titel.`
 
         if (!cancelled) {
           setSummary(text);
-          // Cache opslaan
+          // Save to cache
           const c = readSummaryCache();
           c[pub.id] = text;
           writeSummaryCache(c);
         }
       } catch (e) {
-        console.error('Samenvatting fout:', e);
-        if (!cancelled) setError('Kon de samenvatting niet genereren. Probeer het later opnieuw.');
+        console.error('Summary error:', e);
+        if (!cancelled) setError('Could not generate the summary. Please try again later.');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -746,16 +745,17 @@ Schrijf alleen de samenvatting, geen inleiding of titel.`
       <div className="w-full max-w-lg bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="px-5 py-4 flex items-center justify-between" style={{ backgroundColor: BRAND }}>
-          <div className="flex items-center gap-2 text-white">
+          <div className="flex items-center gap-2" style={{ color: BRAND_TEXT }}>
             <Sparkles size={18} />
-            <h3 className="font-semibold text-sm">Publiekssamenvatting</h3>
+            <h3 className="font-semibold text-sm">Public Summary</h3>
           </div>
           <button onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center">
+            className="w-8 h-8 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: 'rgba(0,0,0,0.12)', color: BRAND_TEXT }}>
             <X size={16} />
           </button>
         </div>
-        {/* Titel */}
+        {/* Title */}
         <div className="px-5 pt-4 pb-2">
           <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug">
             {pub.title}
@@ -766,8 +766,8 @@ Schrijf alleen de samenvatting, geen inleiding of titel.`
         <div className="px-5 pb-5 pt-2">
           {loading && (
             <div className="flex items-center gap-3 py-8">
-              <Loader2 size={20} className="animate-spin" style={{ color: BRAND }} />
-              <span className="text-sm text-slate-500 dark:text-slate-400">Samenvatting genereren…</span>
+              <Loader2 size={20} className="animate-spin text-slate-400" />
+              <span className="text-sm text-slate-500 dark:text-slate-400">Generating summary…</span>
             </div>
           )}
           {error && (
@@ -779,7 +779,7 @@ Schrijf alleen de samenvatting, geen inleiding of titel.`
                 {summary}
               </p>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-3 flex items-center gap-1">
-                <Sparkles size={10} /> Gegenereerd met AI · kan onnauwkeurigheden bevatten
+                <Sparkles size={10} /> Generated with AI · may contain inaccuracies
               </p>
             </div>
           )}
@@ -789,7 +789,7 @@ Schrijf alleen de samenvatting, geen inleiding of titel.`
   );
 }
 
-// ── HTML opschonen ─────────────────────────────────────────────────────────
+// ── Clean HTML ─────────────────────────────────────────────────────────────
 function cleanHtml(str) {
   if (!str) return '';
   // Decode HTML entities (&lt; → <, &amp; → &, &#39; → ', etc.)
@@ -821,7 +821,7 @@ function parseArticle(a) {
   };
 }
 
-// ── Hoofd component ────────────────────────────────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────
 export default function App() {
   const [publications, setPublications]   = useState([]);
   const [loading, setLoading]             = useState(true);
@@ -836,21 +836,21 @@ export default function App() {
   const [appliedSearch, setAppliedSearch] = useState('');
   const [appliedYear, setAppliedYear]     = useState('');
   const [openProfile, setOpenProfile]     = useState(null);
-  const [authorProfile, setAuthorProfile] = useState(null); // auteursprofiel modal
-  const [summaryPub, setSummaryPub]       = useState(null); // publicatie voor samenvatting-modal
+  const [authorProfile, setAuthorProfile] = useState(null);
+  const [summaryPub, setSummaryPub]       = useState(null);
 
-  // Aparte state voor afdelingsfilter-resultaten
+  // Separate state for division-filtered results
   const [deptPubs, setDeptPubs]             = useState([]);
   const [deptLoading, setDeptLoading]       = useState(false);
   const [deptLoadingMore, setDeptLoadingMore] = useState(false);
   const [deptCursor, setDeptCursor]         = useState('*');
   const [deptHasMore, setDeptHasMore]       = useState(false);
 
-  // ── Beschikbare afdelingen ─────────────────────────────────────────────────
+  // ── Available divisions ────────────────────────────────────────────────────
   const [knownDepts, setKnownDepts]         = useState(new Set());
   const [deptsScanned, setDeptsScanned]     = useState(false);
 
-  // ── Eenmalige achtergrond-scan om alle afdelingen te ontdekken ────────────
+  // ── One-time background scan to discover all divisions ────────────────────
   useEffect(() => {
     let cancelled = false;
 
@@ -859,8 +859,7 @@ export default function App() {
         const found = new Set();
         let cursor = '*';
 
-        // Scan 3 pagina's van 100 (= 300 publicaties) — genoeg om vrijwel
-        // alle actieve afdelingen te zien
+        // Scan 3 pages of 100 (= 300 publications) — enough to find all active divisions
         for (let page = 0; page < 3; page++) {
           const query = `(${BASE_QUERY})`;
           const data  = await epmc(query, 100, cursor);
@@ -884,16 +883,16 @@ export default function App() {
           setDeptsScanned(true);
         }
       } catch (e) {
-        console.warn('Afdelingen-scan mislukt:', e);
+        console.warn('Division scan failed:', e);
         if (!cancelled) setDeptsScanned(true);
       }
     }
 
     discoverDepartments();
     return () => { cancelled = true; };
-  }, []); // slechts één keer bij het opstarten
+  }, []); // runs once on startup
 
-  // ── Reguliere publicaties ophalen (geen dept filter) ──────────────────────
+  // ── Fetch regular publications (no division filter) ───────────────────────
   const fetchPublications = useCallback(async (isLoadMore = false, cursor = '*', searchStr = '', yearStr = '') => {
     try {
       if (isLoadMore) setLoadingMore(true);
@@ -922,26 +921,26 @@ export default function App() {
       });
     } catch (err) {
       console.error(err);
-      setError('Er is een fout opgetreden bij het ophalen van publicaties.');
+      setError('An error occurred while fetching publications.');
     } finally {
       if (isLoadMore) setLoadingMore(false);
       else setLoading(false);
     }
   }, []);
 
-  // ── Afdeling-gefilterd ophalen ────────────────────────────────────────────
-  // Haalt batches van 100 op uit EuropePMC en filtert client-side op afdeling
-  // tot er minstens 12 resultaten zijn (of de API uitgeput is)
+  // ── Fetch division-filtered publications ──────────────────────────────────
+  // Fetches batches of 100 from EuropePMC and filters client-side by division
+  // until at least 12 results are found (or the API is exhausted)
   const fetchDeptPublications = useCallback(async (dept, isLoadMore = false, startCursor = '*') => {
     try {
       if (isLoadMore) setDeptLoadingMore(true);
       else { setDeptLoading(true); setDeptPubs([]); }
 
-      const TARGET = 12; // minimaal aantal resultaten per laadbeurt
+      const TARGET = 12; // minimum results per load
       let cursor   = startCursor;
       let found    = isLoadMore ? [] : [];
       let apiDone  = false;
-      let maxPages = 5; // veiligheidsgrens (5 × 100 = 500 publicaties)
+      let maxPages = 5; // safety limit (5 × 100 = 500 publications)
 
       while (found.length < TARGET && !apiDone && maxPages > 0) {
         maxPages--;
@@ -949,7 +948,7 @@ export default function App() {
         const data  = await epmc(query, 100, cursor);
         const articles = data.resultList?.result || [];
 
-        // Filter op afdeling
+        // Filter by division
         for (const a of articles) {
           const depts = extractDepartments(a);
           if (depts.includes(dept)) {
@@ -973,7 +972,7 @@ export default function App() {
       });
     } catch (err) {
       console.error(err);
-      setError('Er is een fout opgetreden bij het ophalen van publicaties.');
+      setError('An error occurred while fetching publications.');
     } finally {
       if (isLoadMore) setDeptLoadingMore(false);
       else setDeptLoading(false);
@@ -987,7 +986,7 @@ export default function App() {
     fetchPublications(false, '*', appliedSearch, appliedYear);
   }, [appliedSearch, appliedYear, fetchPublications]);
 
-  // Wanneer een afdeling geselecteerd wordt → nieuwe fetch
+  // When a division is selected → new fetch
   useEffect(() => {
     if (selectedDept) {
       fetchDeptPublications(selectedDept);
@@ -1010,7 +1009,7 @@ export default function App() {
     setAppliedSearch(''); setAppliedYear('');
   };
 
-  // ── Welke publicaties tonen? ──────────────────────────────────────────────
+  // ── Which publications to show? ───────────────────────────────────────────
   const availableDepts = useMemo(() => [...knownDepts].sort(), [knownDepts]);
   const displayPubs    = selectedDept ? deptPubs : publications;
   const isLoading      = selectedDept ? deptLoading : loading;
@@ -1048,7 +1047,7 @@ export default function App() {
           <button
             onClick={() => setIsDarkMode(d => !d)}
             className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-            aria-label="Wissel weergave"
+            aria-label="Toggle display"
           >
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
@@ -1059,26 +1058,26 @@ export default function App() {
       <header className="w-full flex flex-col">
         <div className="w-full py-5 px-4" style={{ backgroundColor: BRAND }}>
           <div className="max-w-6xl mx-auto text-center">
-            <h1 className="text-2xl md:text-3xl lg:text-4xl text-white font-light tracking-wide">
-              Publicaties Dashboard
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-light tracking-wide" style={{ color: BRAND_TEXT }}>
+              Publications Dashboard
             </h1>
-            <p className="text-white/80 text-sm mt-1">Utrecht Institute for Pharmaceutical Sciences · Utrecht University</p>
+            <p className="text-sm mt-1" style={{ color: BRAND_TEXT, opacity: 0.7 }}>Utrecht Institute for Pharmaceutical Sciences · Utrecht University</p>
           </div>
         </div>
         <div className="max-w-6xl mx-auto w-full px-4 py-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
-          <span className="inline-flex items-center px-3 py-1.5 font-bold text-sm tracking-wide rounded text-white"
-            style={{ backgroundColor: BRAND }}>
-            Live Publicatie Dashboard
+          <span className="inline-flex items-center px-3 py-1.5 font-bold text-sm tracking-wide rounded"
+            style={{ backgroundColor: BRAND, color: BRAND_TEXT }}>
+            Live Publication Dashboard
           </span>
           <p className="text-sm md:text-base text-slate-600 dark:text-slate-400 italic sm:border-l-2 sm:border-slate-300 dark:sm:border-slate-700 sm:pl-4">
-            Actuele wetenschappelijke publicaties van onderzoekers van het Utrecht Institute for Pharmaceutical Sciences via Europe PMC.
+            Current scientific publications from researchers at the Utrecht Institute for Pharmaceutical Sciences via Europe PMC.
           </p>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto p-4 md:p-8 pb-16">
 
-        {/* ── Zoek- & Filterbalk ── */}
+        {/* ── Search & Filter bar ── */}
         <div className="bg-white dark:bg-slate-800 p-4 md:p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 mb-6">
           <form onSubmit={handleSearchSubmit} className="flex flex-col md:flex-row gap-4">
             <div className="flex-grow relative">
@@ -1086,7 +1085,7 @@ export default function App() {
               <input
                 type="text" value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                placeholder="Zoek op auteur, titel, aandoening, trefwoord…"
+                placeholder="Search by author, title, disease, keyword…"
                 className="w-full pl-11 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none transition-all text-slate-700 dark:text-slate-200"
               />
             </div>
@@ -1096,34 +1095,34 @@ export default function App() {
                 value={selectedYear} onChange={e => setSelectedYear(e.target.value)}
                 className="w-full pl-11 pr-8 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none appearance-none text-slate-700 dark:text-slate-200"
               >
-                <option value="">Alle jaren</option>
+                <option value="">All years</option>
                 {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" size={16} />
             </div>
             <button
               type="submit"
-              className="text-white px-7 py-2.5 rounded-lg font-medium transition-colors whitespace-nowrap shrink-0"
-              style={{ backgroundColor: BRAND }}
+              className="font-bold px-7 py-2.5 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              style={{ backgroundColor: BRAND, color: BRAND_TEXT }}
               onMouseOver={e => e.currentTarget.style.backgroundColor = BRAND_DARK}
               onMouseOut={e => e.currentTarget.style.backgroundColor = BRAND}
             >
-              Zoeken
+              Search
             </button>
           </form>
         </div>
 
-        {/* ── Afdeling filter ── */}
+        {/* ── Division filter ── */}
         {(availableDepts.length > 0 || !deptsScanned) && (
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-2 text-sm font-medium text-slate-500 dark:text-slate-400">
               <Building2 size={16} />
-              <span>Filter op divisie</span>
+              <span>Filter by division</span>
               {selectedDept && (
                 <button
                   onClick={() => setSelectedDept('')}
-                  className="ml-1 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white"
-                  style={{ backgroundColor: BRAND }}
+                  className="ml-1 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-bold"
+                  style={{ backgroundColor: BRAND, color: BRAND_TEXT }}
                 >
                   {selectedDept} <X size={11} />
                 </button>
@@ -1131,17 +1130,16 @@ export default function App() {
               {selectedDept && (
                 <button
                   onClick={() => setOpenProfile(selectedDept)}
-                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium transition-colors"
-                  style={{ borderColor: BRAND, color: BRAND }}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-black font-medium transition-colors text-slate-700 dark:border-slate-400 dark:text-slate-300"
                 >
-                  <BarChart2 size={11} /> Bekijk profiel
+                  <BarChart2 size={11} /> View profile
                 </button>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
               {!deptsScanned && availableDepts.length === 0 && (
                 <span className="inline-flex items-center gap-2 text-sm text-slate-400">
-                  <Loader2 size={14} className="animate-spin" /> Divisies detecteren…
+                  <Loader2 size={14} className="animate-spin" /> Detecting divisions…
                 </span>
               )}
               {availableDepts.map(dept => {
@@ -1152,8 +1150,8 @@ export default function App() {
                     onClick={() => setSelectedDept(d => d === dept ? '' : dept)}
                     className="inline-flex items-center gap-1.5 text-sm px-3.5 py-1.5 rounded-full border transition-all font-medium"
                     style={isActive
-                      ? { backgroundColor: BRAND, borderColor: BRAND, color: '#fff' }
-                      : { backgroundColor: 'transparent', borderColor: BRAND, color: BRAND }
+                      ? { backgroundColor: BRAND, borderColor: BRAND, color: BRAND_TEXT }
+                      : { backgroundColor: 'transparent', borderColor: '#000', color: '#000' }
                     }
                   >
                     {dept}
@@ -1164,11 +1162,11 @@ export default function App() {
           </div>
         )}
 
-        {/* ── Sectieheader ── */}
+        {/* ── Section header ── */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl md:text-2xl font-semibold flex items-center gap-2 dark:text-white">
-            <BookOpen size={24} style={{ color: BRAND }} />
-            {hasActiveFilters ? 'Gefilterde publicaties' : 'Recente publicaties'}
+            <BookOpen size={24} className="text-slate-700 dark:text-slate-300" />
+            {hasActiveFilters ? 'Filtered publications' : 'Recent publications'}
             {selectedDept && (
               <span className="text-base font-normal text-slate-500 dark:text-slate-400">
                 — {selectedDept}
@@ -1179,7 +1177,7 @@ export default function App() {
             {hasActiveFilters && (
               <button onClick={clearFilters}
                 className="text-sm font-medium hover:underline text-slate-500 dark:text-slate-400">
-                Wis filters
+                Clear filters
               </button>
             )}
             <span className="text-xs md:text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-300 dark:border-slate-700 hidden sm:inline-block">
@@ -1188,12 +1186,12 @@ export default function App() {
           </div>
         </div>
 
-        {/* ── Laadstatus ── */}
+        {/* ── Loading state ── */}
         {isLoading && (
           <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-            <Loader2 size={48} className="animate-spin mb-4" style={{ color: BRAND }} />
+            <Loader2 size={48} className="animate-spin mb-4 text-slate-400" />
             <p className="text-slate-500 dark:text-slate-400 font-medium">
-              {selectedDept ? `Publicaties ophalen voor ${selectedDept}…` : 'Publicaties ophalen…'}
+              {selectedDept ? `Fetching publications for ${selectedDept}…` : 'Fetching publications…'}
             </p>
           </div>
         )}
@@ -1208,14 +1206,14 @@ export default function App() {
         {!isLoading && !error && displayPubs.length === 0 && (
           <div className="text-center py-20 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
             <FileText size={48} className="text-slate-300 dark:text-slate-600 mx-auto mb-4" />
-            <p className="text-slate-500 dark:text-slate-400 font-medium">Geen publicaties gevonden.</p>
-            <button onClick={clearFilters} className="mt-4 text-sm font-medium hover:underline" style={{ color: BRAND }}>
-              Filters wissen
+            <p className="text-slate-500 dark:text-slate-400 font-medium">No publications found.</p>
+            <button onClick={clearFilters} className="mt-4 text-sm font-medium hover:underline text-slate-600 dark:text-slate-400">
+              Clear filters
             </button>
           </div>
         )}
 
-        {/* ── Publicaties grid ── */}
+        {/* ── Publications grid ── */}
         {!isLoading && !error && displayPubs.length > 0 && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1224,8 +1222,8 @@ export default function App() {
                   className="bg-white dark:bg-slate-800 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden">
                   <div className="p-5 flex-grow">
                     <div className="flex justify-between items-start mb-2 gap-2">
-                      <div className="text-xs font-bold uppercase tracking-wider line-clamp-1"
-                        style={{ color: BRAND }} title={pub.journal}>
+                      <div className="text-xs font-bold uppercase tracking-wider line-clamp-1 text-slate-600 dark:text-slate-400"
+                        title={pub.journal}>
                         {pub.journal}
                       </div>
                       <div className="flex items-center gap-1 text-xs font-medium text-slate-500 dark:text-slate-400 shrink-0 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
@@ -1246,9 +1244,9 @@ export default function App() {
                               onClick={() => setAuthorProfile(name)}
                               className="hover:underline transition-colors"
                               style={{ color: 'inherit' }}
-                              onMouseOver={e => e.currentTarget.style.color = BRAND}
+                              onMouseOver={e => e.currentTarget.style.color = '#000'}
                               onMouseOut={e => e.currentTarget.style.color = ''}
-                              title={`Bekijk profiel van ${name}`}
+                              title={`View profile of ${name}`}
                             >
                               {name}
                             </button>
@@ -1261,9 +1259,8 @@ export default function App() {
                       {pub.departments.filter(d => d !== 'Overig').map(d => (
                         <button key={d}
                           onClick={() => setSelectedDept(d)}
-                          className="text-xs px-2 py-0.5 rounded-full border transition-colors"
-                          style={{ borderColor: BRAND, color: BRAND }}
-                          title={`Filter op ${d}`}>
+                          className="text-xs px-2 py-0.5 rounded-full border border-black text-slate-700 dark:border-slate-400 dark:text-slate-300 transition-colors hover:bg-yellow-100 dark:hover:bg-slate-700"
+                          title={`Filter by ${d}`}>
                           {d}
                         </button>
                       ))}
@@ -1273,19 +1270,16 @@ export default function App() {
                     {anthropic && (
                       <button
                         onClick={() => setSummaryPub(pub)}
-                        className="inline-flex items-center justify-center gap-1.5 text-sm font-medium py-2.5 px-3 rounded-lg border transition-colors"
-                        style={{ borderColor: BRAND, color: BRAND }}
-                        onMouseOver={e => { e.currentTarget.style.backgroundColor = BRAND; e.currentTarget.style.color = '#fff'; }}
-                        onMouseOut={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = BRAND; }}
-                        title="Genereer een publieksvriendelijke samenvatting met AI"
+                        className="inline-flex items-center justify-center gap-1.5 text-sm font-medium py-2.5 px-3 rounded-lg border border-slate-300 text-slate-600 transition-colors hover:border-black hover:text-black dark:border-slate-600 dark:text-slate-300"
+                        title="Generate a public-friendly summary with AI"
                       >
                         <Sparkles size={14} />
-                        Samenvatting
+                        Summary
                       </button>
                     )}
                     <a href={pub.link} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center flex-1 gap-2 text-white text-sm font-medium py-2.5 px-4 rounded-lg transition-colors"
-                      style={{ backgroundColor: BRAND }}
+                      className="inline-flex items-center justify-center flex-1 gap-2 text-sm font-bold py-2.5 px-4 rounded-lg transition-colors"
+                      style={{ backgroundColor: BRAND, color: BRAND_TEXT }}
                       onMouseOver={e => e.currentTarget.style.backgroundColor = BRAND_DARK}
                       onMouseOut={e => e.currentTarget.style.backgroundColor = BRAND}>
                       Europe PMC
@@ -1310,8 +1304,8 @@ export default function App() {
                   className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 px-6 py-3 rounded-full font-semibold shadow-sm hover:shadow hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-70"
                 >
                   {isLoadingMore
-                    ? <><Loader2 size={18} className="animate-spin" /> Artikelen laden…</>
-                    : <>Meer artikelen laden <ChevronDown size={18} /></>
+                    ? <><Loader2 size={18} className="animate-spin" /> Loading articles…</>
+                    : <>Load more articles <ChevronDown size={18} /></>
                   }
                 </button>
               </div>
@@ -1321,9 +1315,9 @@ export default function App() {
       </main>
 
       <footer className="border-t border-slate-200 dark:border-slate-800 py-6 text-center text-xs text-slate-400 dark:text-slate-600">
-        Publicatiedata via{' '}
+        Publication data via{' '}
         <a href="https://europepmc.org" target="_blank" rel="noopener noreferrer"
-          className="hover:underline" style={{ color: BRAND }}>
+          className="hover:underline text-slate-600 dark:text-slate-400">
           Europe PubMed Central
         </a>
         {' '}· Utrecht Institute for Pharmaceutical Sciences, Utrecht University
