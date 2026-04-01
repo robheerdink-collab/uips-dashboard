@@ -444,10 +444,27 @@ function AuthorProfileModal({ author, onClose }) {
     async function findOrcid(authorName) {
       try {
         const data = await epmc(`(${BASE_QUERY}) AND AUTH:"${authorName}"`, 5);
+        // Last name = longest word (initials like "ER" or "H" are always shorter)
+        const parts = authorName.trim().split(/\s+/);
+        const searchLast = parts.reduce((a, b) => a.length >= b.length ? a : b).toLowerCase();
+        // Initials = all other parts, reduced to first character each
+        const searchInitials = parts
+          .filter(p => p.toLowerCase() !== searchLast)
+          .map(p => p[0].toLowerCase())
+          .sort().join('');
+
         for (const article of data.resultList?.result || []) {
           for (const a of article.authorList?.author || []) {
-            if (a.authorId?.type === 'ORCID' && a.fullName &&
-                a.fullName.toLowerCase().includes(authorName.split(' ').slice(-1)[0].toLowerCase())) {
+            if (a.authorId?.type === 'ORCID' &&
+                a.lastName?.toLowerCase() === searchLast) {
+              // If initials available, verify they match to avoid same-surname mix-ups
+              if (searchInitials && a.firstName) {
+                const authorInitials = a.firstName.replace(/[^a-zA-Z]/g, '')
+                  .split('').filter((_, i, arr) => i === 0 || arr[i - 1] === arr[i - 1]?.toUpperCase?.())
+                  .join('').toLowerCase().split('').sort().join('');
+                // Accept if at least the first initial matches
+                if (authorInitials[0] !== searchInitials[0]) continue;
+              }
               return a.authorId.value;
             }
           }
