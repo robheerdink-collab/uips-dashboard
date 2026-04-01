@@ -7,5 +7,5 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
-  base: '/antonius-dashboard/',
+  base: '/uips-dashboard/',
 })

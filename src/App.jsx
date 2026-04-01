@@ -7,8 +7,8 @@ import {
 } from 'lucide-react';
 
 // ── Brand kleur ────────────────────────────────────────────────────────────
-const BRAND     = '#C4226B';
-const BRAND_DARK = '#a81d5c';
+const BRAND     = '#C00A35';
+const BRAND_DARK = '#9a0829';
 
 // ── Anthropic client (optioneel, alleen als key beschikbaar) ───────────────
 const anthropic = import.meta.env.VITE_ANTHROPIC_API_KEY
@@ -16,7 +16,7 @@ const anthropic = import.meta.env.VITE_ANTHROPIC_API_KEY
   : null;
 
 // ── Samenvatting cache (localStorage) ──────────────────────────────────────
-const SUMMARY_CACHE_KEY = 'antonius-summaries';
+const SUMMARY_CACHE_KEY = 'uips-summaries';
 const readSummaryCache = () => {
   try { return JSON.parse(localStorage.getItem(SUMMARY_CACHE_KEY) || '{}'); }
   catch { return {}; }
@@ -28,60 +28,21 @@ const writeSummaryCache = (cache) => {
 
 // ── EuropePMC zoekquery ────────────────────────────────────────────────────
 const BASE_QUERY =
-  `(AFF:("antonius") AND AFF:("nieuwegein")) ` +
-  `OR AFF:("antonius ziekenhuis utrecht") ` +
-  `OR AFF:("antonius hospital utrecht")`;
+  `AFF:("Utrecht Institute for Pharmaceutical Sciences")`;
 
-// ── Afdeling normalisatie (volgorde is belangrijk: specifieker eerst!) ─────
+// ── Divisie normalisatie (volgorde is belangrijk: specifieker eerst!) ──────
 const DEPT_RULES = [
-  // Chirurgische subspecialismen (vóór generiek "surg")
-  [/cardiothorac/i,                    'Cardiothoracale Chirurgie'],
-  [/vascular surg/i,                   'Vaatchirurgie'],
-  [/trauma surg/i,                     'Traumachirurgie'],
-  [/orthop/i,                          'Orthopedie'],
-  [/plastic|reconstruct/i,             'Plastische Chirurgie'],
-  // Generiek chirurgie
-  [/surg/i,                            'Chirurgie'],
-  // Hart
-  [/cardiol/i,                         'Cardiologie'],
-  // Longen (ILD = onderdeel van longziekten)
-  [/pulmonol|respirat|longziek|ild|interstitial lung/i, 'Longziekten'],
-  // Urologie
-  [/urol/i,                            'Urologie'],
-  // Maag-darm
-  [/gastroenterol|leverziek/i,         'Maag-Darm-Leverziekten'],
-  // Beeldvorming
-  [/nuclear med/i,                     'Nucleaire Geneeskunde'],
-  [/interventional radiol/i,           'Interventieradiologie'],
-  [/radiol/i,                          'Radiologie'],
-  // Oncologie & radiotherapie
-  [/radiation oncol/i,                 'Oncologie'],
-  [/medical oncol|oncol/i,             'Oncologie'],
-  // Interne geneeskunde (incl. hematologie, reumatologie)
-  [/rheumatol/i,                       'Reumatologie'],
-  [/hematol/i,                         'Interne Geneeskunde'],
-  [/internal med/i,                    'Interne Geneeskunde'],
-  // Farmacie (alles → Klinische Farmacie)
-  [/pharm/i,                           'Klinische Farmacie'],
-  // Laboratorium
-  [/clinical chem/i,                   'Klinische Chemie'],
-  [/pathol/i,                          'Pathologie'],
-  // Neuro
-  [/neuro.oncol/i,                     'Neurologie'],
-  [/neurophysiol/i,                    'Neurologie'],
-  [/neurol/i,                          'Neurologie'],
-  [/neurosurg/i,                       'Neurochirurgie'],
-  // Overige kliniek
-  [/paediatric|pediatric/i,            'Kindergeneeskunde'],
-  [/psychiatr|medical psychol/i,       'Psychiatrie & Medische Psychologie'],
-  [/anaesthesiol|anesthesiol|anesthesia|intensive care/i, 'Anesthesiologie & Intensieve Zorg'],
-  [/otorhinol|ent\b/i,                 'KNO'],
-  // Ondersteunend
-  [/medical physics/i,                 'Medische Fysica'],
-  [/microbiol/i,                       'Medische Microbiologie'],
-  [/dietetic/i,                        'Diëtetiek'],
-  [/value|kwaliteit/i,                 'Kwaliteit & Waarde'],
-  [/research|statist|development/i,    'Onderzoek & Ontwikkeling'],
+  // Pharmacoepidemiology & Clinical Pharmacology (specifiek vóór generiek "pharmacol")
+  [/pharmacoepidemiol/i,                                   'Pharmacoepidemiology & Clinical Pharmacology'],
+  [/clinical pharmacol/i,                                  'Pharmacoepidemiology & Clinical Pharmacology'],
+  // Biomolecular Mass Spectrometry and Proteomics
+  [/mass spectrometry|proteomics|biomolecular/i,           'Biomolecular Mass Spectrometry and Proteomics'],
+  // Chemical Biology and Drug Discovery
+  [/chemical biology|drug discovery|medicinal chem/i,     'Chemical Biology and Drug Discovery'],
+  // Pharmaceutics
+  [/pharmaceutics|drug delivery|drug formul/i,            'Pharmaceutics'],
+  // Pharmacology (generiek — ná Pharmacoepidemiology & Clinical Pharmacology)
+  [/pharmacol/i,                                          'Pharmacology'],
 ];
 
 function extractDepartments(article) {
@@ -90,8 +51,9 @@ function extractDepartments(article) {
   for (const author of authors) {
     const affs = author.authorAffiliationDetailsList?.authorAffiliation || [];
     for (const { affiliation: aff = '' } of affs) {
-      if (!aff.toLowerCase().includes('antonius')) continue;
-      const m = aff.match(/^(Department of [^,]+|Afdeling [^,]+)/i);
+      const aff_lower = aff.toLowerCase();
+      if (!aff_lower.includes('pharmaceutical sciences') && !aff_lower.includes('uips')) continue;
+      const m = aff.match(/^(Division of [^,]+|Department of [^,]+)/i);
       const s = m ? m[1] : aff;
       let matched = false;
       for (const [re, label] of DEPT_RULES) {
@@ -103,11 +65,14 @@ function extractDepartments(article) {
   return found.size > 0 ? [...found] : ['Overig'];
 }
 
-function extractAntoniusAuthors(article) {
+function extractUIPSAuthors(article) {
   const result = [];
   for (const author of article.authorList?.author || []) {
     const affs = author.authorAffiliationDetailsList?.authorAffiliation || [];
-    if (affs.some(a => a.affiliation?.toLowerCase().includes('antonius')) && author.fullName) {
+    if (affs.some(a => {
+      const aff_lower = a.affiliation?.toLowerCase() || '';
+      return aff_lower.includes('pharmaceutical sciences') || aff_lower.includes('uips');
+    }) && author.fullName) {
       result.push(author.fullName);
     }
   }
@@ -210,7 +175,7 @@ function DeptProfileModal({ dept, onClose }) {
           const journal = a.journalInfo?.journal?.title || a.journalTitle || '';
           if (journal) journalCounts[journal] = (journalCounts[journal] || 0) + 1;
 
-          for (const name of extractAntoniusAuthors(a))
+          for (const name of extractUIPSAuthors(a))
             authorCounts[name] = (authorCounts[name] || 0) + 1;
 
           for (const kw of a.keywordList?.keyword || []) {
@@ -278,7 +243,7 @@ function DeptProfileModal({ dept, onClose }) {
         <div className="px-6 py-5 flex items-center justify-between" style={{ backgroundColor: BRAND }}>
           <div>
             <h2 className="text-xl font-bold text-white">{dept}</h2>
-            <p className="text-white/75 text-sm mt-0.5">St. Antonius Ziekenhuis</p>
+            <p className="text-white/75 text-sm mt-0.5">UIPS · Utrecht University</p>
           </div>
           <button
             onClick={onClose}
@@ -552,7 +517,7 @@ function AuthorProfileModal({ author, onClose }) {
             </div>
             <div>
               <h2 className="text-xl font-bold text-white">{author}</h2>
-              <p className="text-white/75 text-sm mt-0.5">St. Antonius Ziekenhuis · Publicatieprofiel</p>
+              <p className="text-white/75 text-sm mt-0.5">UIPS · Utrecht University · Publicatieprofiel</p>
             </div>
           </div>
           <button
@@ -582,7 +547,7 @@ function AuthorProfileModal({ author, onClose }) {
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-center">
                   <div className="text-3xl font-bold" style={{ color: BRAND }}>{stats.count}</div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Publicaties (Antonius)</div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Publicaties (UIPS)</div>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-center">
                   <div className="text-3xl font-bold" style={{ color: BRAND }}>
@@ -597,7 +562,7 @@ function AuthorProfileModal({ author, onClose }) {
               {/* Geen publicaties */}
               {stats.count === 0 && (
                 <p className="text-slate-500 dark:text-slate-400 text-sm text-center py-4">
-                  Geen Antonius-publicaties gevonden voor deze auteur.
+                  Geen UIPS-publicaties gevonden voor deze auteur.
                 </p>
               )}
 
@@ -743,11 +708,11 @@ function SummaryModal({ pub, onClose }) {
           max_tokens: 400,
           messages: [{
             role: 'user',
-            content: `Je bent een wetenschapscommunicator. Schrijf een heldere publieksamenvatting in het Nederlands (max 150 woorden) van het volgende wetenschappelijke artikel. Gebruik begrijpelijke taal, vermijd jargon, en leg uit waarom dit onderzoek relevant is voor patiënten of de maatschappij.
+            content: `Je bent een wetenschapscommunicator. Schrijf een heldere publieksamenvatting in het Nederlands (max 150 woorden) van het volgende wetenschappelijke artikel van het Utrecht Institute for Pharmaceutical Sciences (UIPS). Gebruik begrijpelijke taal, vermijd jargon, en leg uit waarom dit onderzoek relevant is voor patiënten of de maatschappij.
 
 Titel: ${pub.title}
 Tijdschrift: ${pub.journal}
-Afdeling: ${pub.departments?.filter(d => d !== 'Overig').join(', ') || 'Onbekend'}
+Divisie: ${pub.departments?.filter(d => d !== 'Overig').join(', ') || 'Onbekend'}
 Abstract: ${pub.abstractFull || pub.abstract || 'Niet beschikbaar'}
 
 Schrijf alleen de samenvatting, geen inleiding of titel.`
@@ -1072,10 +1037,10 @@ export default function App() {
       {/* ── Navigatie ── */}
       <nav className="bg-white px-4 md:px-8 py-3 flex justify-between items-center w-full border-b border-slate-200">
         <div className="max-w-6xl mx-auto w-full flex justify-between items-center">
-          <a href="https://www.antoniusziekenhuis.nl" target="_blank" rel="noopener noreferrer">
+          <a href="https://www.uu.nl/en/research/utrecht-institute-for-pharmaceutical-sciences" target="_blank" rel="noopener noreferrer">
             <img
-              src="./st-antonius-logo.svg"
-              alt="St. Antonius Ziekenhuis"
+              src="./uips-logo.svg"
+              alt="Utrecht Institute for Pharmaceutical Sciences"
               className="h-9"
               onError={e => { e.target.onerror = null; e.target.style.display = 'none'; }}
             />
@@ -1097,7 +1062,7 @@ export default function App() {
             <h1 className="text-2xl md:text-3xl lg:text-4xl text-white font-light tracking-wide">
               Publicaties Dashboard
             </h1>
-            <p className="text-white/80 text-sm mt-1">St. Antonius Ziekenhuis · Nieuwegein / Utrecht</p>
+            <p className="text-white/80 text-sm mt-1">Utrecht Institute for Pharmaceutical Sciences · Utrecht University</p>
           </div>
         </div>
         <div className="max-w-6xl mx-auto w-full px-4 py-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
@@ -1106,7 +1071,7 @@ export default function App() {
             Live Publicatie Dashboard
           </span>
           <p className="text-sm md:text-base text-slate-600 dark:text-slate-400 italic sm:border-l-2 sm:border-slate-300 dark:sm:border-slate-700 sm:pl-4">
-            Actuele wetenschappelijke publicaties van medewerkers van het St. Antonius Ziekenhuis via Europe PMC.
+            Actuele wetenschappelijke publicaties van onderzoekers van het Utrecht Institute for Pharmaceutical Sciences via Europe PMC.
           </p>
         </div>
       </header>
@@ -1153,7 +1118,7 @@ export default function App() {
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-2 text-sm font-medium text-slate-500 dark:text-slate-400">
               <Building2 size={16} />
-              <span>Filter op afdeling</span>
+              <span>Filter op divisie</span>
               {selectedDept && (
                 <button
                   onClick={() => setSelectedDept('')}
@@ -1176,7 +1141,7 @@ export default function App() {
             <div className="flex flex-wrap gap-2">
               {!deptsScanned && availableDepts.length === 0 && (
                 <span className="inline-flex items-center gap-2 text-sm text-slate-400">
-                  <Loader2 size={14} className="animate-spin" /> Afdelingen detecteren…
+                  <Loader2 size={14} className="animate-spin" /> Divisies detecteren…
                 </span>
               )}
               {availableDepts.map(dept => {
@@ -1361,7 +1326,7 @@ export default function App() {
           className="hover:underline" style={{ color: BRAND }}>
           Europe PubMed Central
         </a>
-        {' '}· St. Antonius Ziekenhuis, Nieuwegein / Utrecht
+        {' '}· Utrecht Institute for Pharmaceutical Sciences, Utrecht University
       </footer>
     </div>
   );
