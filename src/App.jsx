@@ -440,16 +440,36 @@ function AuthorProfileModal({ author, onClose }) {
   useEffect(() => {
     let cancelled = false;
 
+    // Look up ORCID from a known UIPS paper for this author
+    async function findOrcid(authorName) {
+      try {
+        const data = await epmc(`(${BASE_QUERY}) AND AUTH:"${authorName}"`, 5);
+        for (const article of data.resultList?.result || []) {
+          for (const a of article.authorList?.author || []) {
+            if (a.authorId?.type === 'ORCID' && a.fullName &&
+                a.fullName.toLowerCase().includes(authorName.split(' ').slice(-1)[0].toLowerCase())) {
+              return a.authorId.value;
+            }
+          }
+        }
+      } catch {}
+      return null;
+    }
+
     async function load() {
       setLoading(true); setError(null);
       try {
         const thisYear = new Date().getFullYear();
         const years    = Array.from({ length: thisYear - 1999 }, (_, i) => 2000 + i);
 
+        // Try ORCID first; fall back to name search if unavailable
+        const orcid   = await findOrcid(author);
+        const authQ   = orcid ? `AUTHORID:"${orcid}"` : `AUTH:"${author}"`;
+
         const perYear = await Promise.all(
           years.map(async year => {
             try {
-              const q = `AUTH:"${author}" AND PUB_YEAR:${year}`;
+              const q = `${authQ} AND PUB_YEAR:${year}`;
               const data = await epmc(q, 1000);
               return { year, articles: data.resultList?.result || [] };
             } catch { return { year, articles: [] }; }
@@ -517,6 +537,7 @@ function AuthorProfileModal({ author, onClose }) {
           topCoauthors: Object.entries(coauthorCounts).sort((a, b) => b[1] - a[1]).slice(0, 8),
           topTopics:    Object.entries(topicCounts).sort((a, b) => b[1] - a[1]).slice(0, 8),
           recentPubs,
+          orcid,
         });
       } catch (e) {
         if (!cancelled) setError('Could not fetch statistics.');
@@ -543,7 +564,17 @@ function AuthorProfileModal({ author, onClose }) {
             </div>
             <div>
               <h2 className="text-xl font-bold" style={{ color: BRAND_TEXT }}>{author}</h2>
-              <p className="text-sm mt-0.5" style={{ color: BRAND_TEXT, opacity: 0.7 }}>UIPS · Utrecht University · Publication Profile</p>
+              <p className="text-sm mt-0.5" style={{ color: BRAND_TEXT, opacity: 0.7 }}>
+                UIPS · Utrecht University · Publication Profile
+                {stats?.orcid && (
+                  <> · <a
+                    href={`https://orcid.org/${stats.orcid}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="underline hover:opacity-80"
+                    style={{ color: BRAND_TEXT }}
+                  >ORCID {stats.orcid}</a></>
+                )}
+              </p>
             </div>
           </div>
           <button
