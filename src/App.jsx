@@ -28,7 +28,7 @@ const writeSummaryCache = (cache) => {
 };
 
 // ── SDG cache (localStorage) ──────────────────────────────────────────────
-const SDG_CACHE_KEY = 'uips-sdgs-v3'; // v3: stricter prompt, clears over-assigned SDGs
+const SDG_CACHE_KEY = 'uips-sdgs-v4'; // v4: expanded search query surfaces new papers
 const readSdgCache = () => {
   try { return JSON.parse(localStorage.getItem(SDG_CACHE_KEY) || '{}'); }
   catch { return {}; }
@@ -53,7 +53,7 @@ const sdgIconUrl = n =>
 
 // ── EuropePMC search query ────────────────────────────────────────────────
 const BASE_QUERY =
-  `AFF:("Utrecht Institute for Pharmaceutical Sciences")`;
+  `(AFF:("Utrecht Institute for Pharmaceutical Sciences") OR AFF:("Utrecht Institute of Pharmaceutical Sciences") OR (AFF:("UIPS") AND AFF:("Utrecht")))`;
 
 // ── Division normalisation (order matters: most specific first!) ───────────
 const DEPT_RULES = [
@@ -70,14 +70,21 @@ const DEPT_RULES = [
   [/pharmacol/i,                                          'Pharmacology'],
 ];
 
+// Check if an affiliation string is UIPS-related
+function isUIPSAffiliation(aff) {
+  const a = aff.toLowerCase();
+  return a.includes('pharmaceutical sciences') ||
+         a.includes('uips') ||
+         (a.includes('utrecht') && DEPT_RULES.some(([re]) => re.test(a)));
+}
+
 function extractDepartments(article) {
   const authors = article.authorList?.author || [];
   const found = new Set();
   for (const author of authors) {
     const affs = author.authorAffiliationDetailsList?.authorAffiliation || [];
     for (const { affiliation: aff = '' } of affs) {
-      const aff_lower = aff.toLowerCase();
-      if (!aff_lower.includes('pharmaceutical sciences') && !aff_lower.includes('uips')) continue;
+      if (!isUIPSAffiliation(aff)) continue;
       const m = aff.match(/^(Division of [^,]+|Department of [^,]+)/i);
       const s = m ? m[1] : aff;
       let matched = false;
@@ -94,10 +101,7 @@ function extractUIPSAuthors(article) {
   const result = [];
   for (const author of article.authorList?.author || []) {
     const affs = author.authorAffiliationDetailsList?.authorAffiliation || [];
-    if (affs.some(a => {
-      const aff_lower = a.affiliation?.toLowerCase() || '';
-      return aff_lower.includes('pharmaceutical sciences') || aff_lower.includes('uips');
-    }) && author.fullName) {
+    if (affs.some(a => isUIPSAffiliation(a.affiliation || '')) && author.fullName) {
       result.push(author.fullName);
     }
   }
@@ -171,15 +175,15 @@ function DeptProfileModal({ dept, onClose }) {
     async function load() {
       setLoading(true); setError(null);
       try {
-        // Haal per jaar de publicaties op (2015 t/m huidig jaar) in parallel
+        // Haal per jaar de publicaties op (2000 t/m huidig jaar) in parallel
         const thisYear = new Date().getFullYear();
-        const years    = Array.from({ length: thisYear - 2014 }, (_, i) => 2015 + i);
+        const years    = Array.from({ length: thisYear - 1999 }, (_, i) => 2000 + i);
 
         const perYear = await Promise.all(
           years.map(async year => {
             try {
               const q = `(${BASE_QUERY}) AND PUB_YEAR:${year}`;
-              const data = await epmc(q, 100);
+              const data = await epmc(q, 1000);
               const articles = (data.resultList?.result || [])
                 .filter(a => extractDepartments(a).includes(dept));
               return { year, articles };
@@ -442,13 +446,13 @@ function AuthorProfileModal({ author, onClose }) {
       setLoading(true); setError(null);
       try {
         const thisYear = new Date().getFullYear();
-        const years    = Array.from({ length: thisYear - 2014 }, (_, i) => 2015 + i);
+        const years    = Array.from({ length: thisYear - 1999 }, (_, i) => 2000 + i);
 
         const perYear = await Promise.all(
           years.map(async year => {
             try {
               const q = `(${BASE_QUERY}) AND AUTH:"${author}" AND PUB_YEAR:${year}`;
-              const data = await epmc(q, 100);
+              const data = await epmc(q, 1000);
               return { year, articles: data.resultList?.result || [] };
             } catch { return { year, articles: [] }; }
           })
@@ -1141,7 +1145,7 @@ export default function App() {
   const canLoadMore    = selectedDept ? deptHasMore : hasMore;
 
   const currentYear = new Date().getFullYear();
-  const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
+  const yearOptions = Array.from({ length: currentYear - 1999 }, (_, i) => currentYear - i);
   const hasActiveFilters = appliedSearch || appliedYear || selectedDept;
 
   return (
