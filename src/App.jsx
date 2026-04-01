@@ -449,7 +449,7 @@ function AuthorProfileModal({ author, onClose }) {
         const perYear = await Promise.all(
           years.map(async year => {
             try {
-              const q = `(${BASE_QUERY}) AND AUTH:"${author}" AND PUB_YEAR:${year}`;
+              const q = `AUTH:"${author}" AND PUB_YEAR:${year}`;
               const data = await epmc(q, 1000);
               return { year, articles: data.resultList?.result || [] };
             } catch { return { year, articles: [] }; }
