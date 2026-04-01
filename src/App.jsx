@@ -27,6 +27,30 @@ const writeSummaryCache = (cache) => {
   catch { /* full — skip */ }
 };
 
+// ── SDG cache (localStorage) ──────────────────────────────────────────────
+const SDG_CACHE_KEY = 'uips-sdgs';
+const readSdgCache = () => {
+  try { return JSON.parse(localStorage.getItem(SDG_CACHE_KEY) || '{}'); }
+  catch { return {}; }
+};
+const writeSdgCache = (cache) => {
+  try { localStorage.setItem(SDG_CACHE_KEY, JSON.stringify(cache)); }
+  catch { /* full — skip */ }
+};
+
+// ── SDG labels (1-17) ─────────────────────────────────────────────────────
+const SDG_LABELS = {
+  1: 'No Poverty', 2: 'Zero Hunger', 3: 'Good Health and Well-being',
+  4: 'Quality Education', 5: 'Gender Equality', 6: 'Clean Water and Sanitation',
+  7: 'Affordable and Clean Energy', 8: 'Decent Work and Economic Growth',
+  9: 'Industry, Innovation and Infrastructure', 10: 'Reduced Inequalities',
+  11: 'Sustainable Cities and Communities', 12: 'Responsible Consumption and Production',
+  13: 'Climate Action', 14: 'Life Below Water', 15: 'Life on Land',
+  16: 'Peace, Justice and Strong Institutions', 17: 'Partnerships for the Goals',
+};
+const sdgIconUrl = n =>
+  `${import.meta.env.BASE_URL}E-WEB-Goal-${String(n).padStart(2, '0')}.png`;
+
 // ── EuropePMC search query ────────────────────────────────────────────────
 const BASE_QUERY =
   `AFF:("Utrecht Institute for Pharmaceutical Sciences")`;
@@ -789,6 +813,91 @@ Write only the summary, no introduction or title.`
   );
 }
 
+// ── SDG Badges component ──────────────────────────────────────────────────
+function SdgBadges({ pub }) {
+  const [sdgs, setSdgs] = useState(undefined); // undefined = loading
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      // 1. Check cache first
+      const cache = readSdgCache();
+      if (cache[pub.id] !== undefined) {
+        setSdgs(cache[pub.id]);
+        return;
+      }
+      // 2. No API key → store empty array so we don't retry
+      if (!anthropic) {
+        setSdgs([]);
+        const c = readSdgCache();
+        c[pub.id] = [];
+        writeSdgCache(c);
+        return;
+      }
+      // 3. Call Haiku
+      try {
+        const response = await anthropic.messages.create({
+          model: 'claude-haiku-4-5',
+          max_tokens: 60,
+          messages: [{
+            role: 'user',
+            content:
+              `You are an expert on UN Sustainable Development Goals (SDGs 1-17). ` +
+              `Based ONLY on the title and abstract below, list the directly relevant SDG numbers. ` +
+              `Respond with ONLY a JSON array of integers, max 3, e.g. [3,17]. ` +
+              `If uncertain, prefer SDG 3 for health/pharma research.\n\n` +
+              `Title: ${pub.title}\n` +
+              `Abstract: ${(pub.abstractFull || '').slice(0, 600) || 'Not available'}`,
+          }],
+        });
+        const text = response.content.find(b => b.type === 'text')?.text || '[]';
+        const match = text.match(/\[[\d,\s]*\]/);
+        const nums = match
+          ? JSON.parse(match[0]).filter(n => Number.isInteger(n) && n >= 1 && n <= 17).slice(0, 3)
+          : [];
+        if (!cancelled) {
+          setSdgs(nums);
+          const c = readSdgCache();
+          c[pub.id] = nums;
+          writeSdgCache(c);
+        }
+      } catch {
+        if (!cancelled) setSdgs([]);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [pub.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Still loading → small skeleton dots
+  if (sdgs === undefined) {
+    return (
+      <div className="flex gap-1 mt-2">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+  if (!sdgs.length) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1 mt-2">
+      {sdgs.map(n => (
+        <img
+          key={n}
+          src={sdgIconUrl(n)}
+          alt={`SDG ${n}`}
+          title={`SDG ${n}: ${SDG_LABELS[n]}`}
+          className="w-8 h-8 rounded object-cover"
+        />
+      ))}
+    </div>
+  );
+}
+
 // ── Clean HTML ─────────────────────────────────────────────────────────────
 function cleanHtml(str) {
   if (!str) return '';
@@ -1265,18 +1374,17 @@ export default function App() {
                         </button>
                       ))}
                     </div>
+                    <SdgBadges pub={pub} />
                   </div>
                   <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-700 mt-auto flex gap-2">
-                    {anthropic && (
-                      <button
-                        onClick={() => setSummaryPub(pub)}
-                        className="inline-flex items-center justify-center gap-1.5 text-sm font-medium py-2.5 px-3 rounded-lg border border-slate-300 text-slate-600 transition-colors hover:border-black hover:text-black dark:border-slate-600 dark:text-slate-300"
-                        title="Generate a public-friendly summary with AI"
-                      >
-                        <Sparkles size={14} />
-                        Summary
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setSummaryPub(pub)}
+                      className="inline-flex items-center justify-center gap-1.5 text-sm font-medium py-2.5 px-3 rounded-lg border border-slate-300 text-slate-600 transition-colors hover:border-black hover:text-black dark:border-slate-600 dark:text-slate-300"
+                      title="Generate a public-friendly summary with AI"
+                    >
+                      <Sparkles size={14} />
+                      Summary
+                    </button>
                     <a href={pub.link} target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center justify-center flex-1 gap-2 text-sm font-bold py-2.5 px-4 rounded-lg transition-colors"
                       style={{ backgroundColor: BRAND, color: BRAND_TEXT }}
