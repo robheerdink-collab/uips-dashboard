@@ -28,7 +28,7 @@ const writeSummaryCache = (cache) => {
 };
 
 // ── SDG cache (localStorage) ──────────────────────────────────────────────
-const SDG_CACHE_KEY = 'uips-sdgs-v2'; // v2: clears stale empty-array entries
+const SDG_CACHE_KEY = 'uips-sdgs-v3'; // v3: stricter prompt, clears over-assigned SDGs
 const readSdgCache = () => {
   try { return JSON.parse(localStorage.getItem(SDG_CACHE_KEY) || '{}'); }
   catch { return {}; }
@@ -836,17 +836,25 @@ function SdgBadges({ pub }) {
       try {
         const response = await anthropic.messages.create({
           model: 'claude-haiku-4-5',
-          max_tokens: 80,
+          max_tokens: 60,
           messages: [{
             role: 'user',
             content:
-              `You are an SDG classifier for pharmaceutical and health sciences publications. ` +
-              `Your task: assign the most relevant UN SDGs (1-17) to the publication below.\n\n` +
-              `RULES:\n` +
-              `- SDG 3 (Good Health and Well-being) applies to virtually ALL health, pharma, ` +
-              `clinical, epidemiology, drug, disease, patient, or biomedical research. Always include it.\n` +
-              `- Add up to 2 additional SDGs only when clearly supported by the text.\n` +
-              `- Respond with ONLY a JSON array of integers, e.g. [3,10]. No other text.\n\n` +
+              `You classify pharmaceutical sciences publications into UN SDGs.\n\n` +
+              `RULES (follow strictly):\n` +
+              `1. ALWAYS include SDG 3 — virtually all pharma/health research qualifies.\n` +
+              `2. Returning just [3] is CORRECT and EXPECTED for most papers. Do NOT force extra SDGs.\n` +
+              `3. Only add ONE extra SDG if the abstract EXPLICITLY discusses one of these:\n` +
+              `   - SDG 2: the paper is about nutrition, food safety, or hunger\n` +
+              `   - SDG 6: the paper is about water quality or sanitation\n` +
+              `   - SDG 10: the paper explicitly studies health disparities or access to medicines in low-income countries\n` +
+              `   - SDG 12: the paper is about green/sustainable chemistry or pharmaceutical waste reduction\n` +
+              `   - SDG 14/15: the paper is about environmental or ecological toxicology\n` +
+              `4. Do NOT assign:\n` +
+              `   - SDG 5 unless the paper explicitly studies gender-specific health outcomes\n` +
+              `   - SDG 9 for lab methods, new materials, or novel assays — that is normal research, not infrastructure\n` +
+              `   - SDG 17 for papers that merely have international co-authors\n\n` +
+              `Respond with ONLY a JSON array. Example: [3] or [3,10]\n\n` +
               `Title: ${pub.title}\n` +
               `Abstract: ${(pub.abstractFull || '').slice(0, 800) || 'Not available'}`,
           }],
