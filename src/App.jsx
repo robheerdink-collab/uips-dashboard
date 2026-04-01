@@ -28,7 +28,7 @@ const writeSummaryCache = (cache) => {
 };
 
 // ── SDG cache (localStorage) ──────────────────────────────────────────────
-const SDG_CACHE_KEY = 'uips-sdgs';
+const SDG_CACHE_KEY = 'uips-sdgs-v2'; // v2: clears stale empty-array entries
 const readSdgCache = () => {
   try { return JSON.parse(localStorage.getItem(SDG_CACHE_KEY) || '{}'); }
   catch { return {}; }
@@ -827,40 +827,43 @@ function SdgBadges({ pub }) {
         setSdgs(cache[pub.id]);
         return;
       }
-      // 2. No API key → store empty array so we don't retry
+      // 2. No API key → show nothing, do NOT cache so we retry when key is available
       if (!anthropic) {
         setSdgs([]);
-        const c = readSdgCache();
-        c[pub.id] = [];
-        writeSdgCache(c);
         return;
       }
       // 3. Call Haiku
       try {
         const response = await anthropic.messages.create({
           model: 'claude-haiku-4-5',
-          max_tokens: 60,
+          max_tokens: 80,
           messages: [{
             role: 'user',
             content:
-              `You are an expert on UN Sustainable Development Goals (SDGs 1-17). ` +
-              `Based ONLY on the title and abstract below, list the directly relevant SDG numbers. ` +
-              `Respond with ONLY a JSON array of integers, max 3, e.g. [3,17]. ` +
-              `If uncertain, prefer SDG 3 for health/pharma research.\n\n` +
+              `You are an SDG classifier for pharmaceutical and health sciences publications. ` +
+              `Your task: assign the most relevant UN SDGs (1-17) to the publication below.\n\n` +
+              `RULES:\n` +
+              `- SDG 3 (Good Health and Well-being) applies to virtually ALL health, pharma, ` +
+              `clinical, epidemiology, drug, disease, patient, or biomedical research. Always include it.\n` +
+              `- Add up to 2 additional SDGs only when clearly supported by the text.\n` +
+              `- Respond with ONLY a JSON array of integers, e.g. [3,10]. No other text.\n\n` +
               `Title: ${pub.title}\n` +
-              `Abstract: ${(pub.abstractFull || '').slice(0, 600) || 'Not available'}`,
+              `Abstract: ${(pub.abstractFull || '').slice(0, 800) || 'Not available'}`,
           }],
         });
         const text = response.content.find(b => b.type === 'text')?.text || '[]';
         const match = text.match(/\[[\d,\s]*\]/);
         const nums = match
           ? JSON.parse(match[0]).filter(n => Number.isInteger(n) && n >= 1 && n <= 17).slice(0, 3)
-          : [];
+          : [3]; // fallback: SDG 3 always applies to UIPS research
         if (!cancelled) {
           setSdgs(nums);
-          const c = readSdgCache();
-          c[pub.id] = nums;
-          writeSdgCache(c);
+          // Only cache non-empty results so failed/keyless attempts are retried
+          if (nums.length > 0) {
+            const c = readSdgCache();
+            c[pub.id] = nums;
+            writeSdgCache(c);
+          }
         }
       } catch {
         if (!cancelled) setSdgs([]);
